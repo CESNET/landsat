@@ -5,6 +5,8 @@ from pathlib import Path
 
 import config.config as config
 
+from api_connector import *
+
 
 def setup_logging(current_path):
     log_dir = current_path + '/' + config.log_directory
@@ -30,3 +32,5 @@ if __name__ == '__main__':
 
     setup_logging(root_dir)
     logging.getLogger(config.log_logger).info("=== LANDSAT INITIALIZATION ===")
+
+    ApiConnector(logger=logging.getLogger(config.log_logger))
