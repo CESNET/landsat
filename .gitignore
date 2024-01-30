@@ -3,3 +3,4 @@
 __pycache__
 log
 config/m2m_credentials.py
+workdir

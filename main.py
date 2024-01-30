@@ -1,7 +1,5 @@
-import logging
 import re
 from logging.handlers import TimedRotatingFileHandler
-from pathlib import Path
 
 import config.config as config
 
@@ -33,4 +31,5 @@ if __name__ == '__main__':
     setup_logging(root_dir)
     logging.getLogger(config.log_logger).info("=== LANDSAT INITIALIZATION ===")
 
-    ApiConnector(logger=logging.getLogger(config.log_logger))
+    api_connector = ApiConnector(root_dir=root_dir, logger=logging.getLogger(config.log_logger))
+    api_connector.download_to_present()
