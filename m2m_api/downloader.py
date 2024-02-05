@@ -1,10 +1,6 @@
 import concurrent.futures
-import logging
-import os
+import logging, time, requests, random, os
 import os.path as osp
-import random
-import requests
-import time
 
 ACQ_PATH = './ingest'
 

@@ -14,4 +14,4 @@ NOTSET = 0
 log_directory = './log'
 log_name = 'landsat.log'
 log_level = 20
-log_logger = "logger_landsat"
+log_logger = "LandsatLogger"

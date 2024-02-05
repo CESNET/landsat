@@ -1,125 +1,167 @@
+import datetime
 import json
 import logging
-import datetime
-from pathlib import Path
+import os
+import random
+import time
 
-from m2m_api.api import M2M
-from config import m2m_credentials
+import requests
 
 
-class ApiConnector:
-    allowed_datasets = [
-        "landsat_ot_c2_l1", "landsat_ot_c2_l2",
-        "landsat_etm_c2_l1", "landsat_etm_c2_l2",
-        "landsat_tm_c2_l1", "landsat_tm_c2_l2",
-        "landsat_mss_c2_l1"
-    ]
+class APIConnectorError(Exception):
+    def __init__(self, message="API Connector General Error!"):
+        self.message = message
+        super().__init__(self.message)
 
-    dataset_fullname = {
-        "landsat_ot_c2_l1": "Landsat 8-9 OLI/TIRS C2 L1",
-        "landsat_ot_c2_l2": "Landsat 8-9 OLI/TIRS C2 L2",
-        "landsat_etm_c2_l1": "Landsat 7 ETM+ C2 L1",
-        "landsat_etm_c2_l2": "Landsat 7 ETM+ C2 L2",
-        "landsat_tm_c2_l1": "Landsat 4-5 TM C2 L1",
-        "landsat_tm_c2_l2": "Landsat 4-5 TM C2 L2",
-        "landsat_mss_c2_l1": "Landsat 1-5 MSS C2 L1"
-    }
 
-    def __init__(
-            self,
-            username=None,
-            token=None,
-            root_dir=None,
-            logger=logging.getLogger('logger_apiConnector')
-    ):
-        if root_dir is None:
-            raise Exception("root_dir must be specified")
+class APITokenNotObtainedError(APIConnectorError):
+    def __init__(self, message="API Token not obtained!"):
+        self.message = message
+        super().__init__(self.message)
 
-        self.root_dir = root_dir
+
+class APICredentialsNotProvided(APIConnectorError):
+    def __init__(self, message="API Credentials were not provided!"):
+        self.message = message
+        super().__init__(self.message)
+
+
+class APIRequestTimeout(APIConnectorError):
+    def __init__(self, message="API Request Timeouted", retry=None):
+        if retry is not None:
+            self.message = "API Request Timeouted after {} retries.".format(retry)
+        else:
+            self.message = message
+
+        super().__init__(self.message)
+
+
+class APIRequestNotOK(APIConnectorError):
+    def __init__(self, message="API Request status code not 200/OK!", status_code=None):
+        if status_code is not None:
+            self.message = "API Request status code is {}!".format(status_code)
+        else:
+            self.message = message
+
+
+class APIConnector:
+    api_url = "https://m2m.cr.usgs.gov/api/api/json/stable/"
+
+    def __init__(self, logger=logging.getLogger("APIConnector"), username=None, token=None):
         self.logger = logger
-        self.workdir = root_dir + 'workdir'
+        self.__login_token(username, token)
 
-        if username is not None:
-            self.username = username
-        else:
-            self.username = m2m_credentials.username
+    def __login_token(self, username=None, token=None):
+        if (username is None) or (token is None):
+            raise APICredentialsNotProvided()
 
-        if token is not None:
-            self.token = token
-        else:
-            self.token = m2m_credentials.token
+        self.username = username
+        self.token = token
 
-        self.m2m = M2M(username=self.username, token=self.token)
+        self.api_token = None
+        self.api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
 
-    def __get_last_downloaded_day(self):
-        last_downloaded_day_file = open('workdir/last_downloaded_day.json')
-        last_downloaded_day = datetime.datetime.strptime(
-            json.load(last_downloaded_day_file)['last_downloaded_day'],
-            "%Y-%m-%d"
-        ).date()
-        last_downloaded_day_file.close()
+        api_payload = {
+            "username": self.username,
+            "token": self.token
+        }
 
-        return last_downloaded_day
+        response = self.__send_request('login-token', api_payload)
+        response_content = json.loads(response)
 
-    def __should_download_new_data(self, last_downloaded, yesterday):
-        if yesterday > last_downloaded:
+        self.api_token = response_content['data']
+
+        if self.api_token is None:
+            raise APITokenNotObtainedError()
+
+    def fetch_scenes(self, dataset, geojson, day_start, day_end):
+            api_payload = {
+                "maxResults": 10000,
+                "datasetName": dataset,
+                "sceneFilter": {
+                    "spatialFilter": {
+                        "filterType": "geojson",
+                        "geoJson": geojson
+                    },
+                    "acquisitionFilter": {
+                        "start": str(day_start),
+                        "end": str(day_end)
+                    }
+                }
+            }
+
+            response = self.__send_request('scene-search', api_payload)
+
+            scenes = json.loads(response)
+
+            return scenes['data']
+
+    def download_dataset(self, dataset, time_start, time_end):
+        geojson_files_paths = [os.path.join('geojson', geojson_file) for geojson_file in os.listdir('geojson')]
+
+        entity_ids = None
+
+        for geojson_file_path in geojson_files_paths:
+            with open(geojson_file_path, 'r') as geojson_file:
+                geojson = json.loads(geojson_file.read())
+
+            scenes = self.fetch_scenes(dataset, geojson, time_start, time_end)
+            entity_ids = [result['entityId'] for result in scenes['results']]
+
             self.logger.info(
-                "Data were last downloaded on: " + str(last_downloaded) +
-                ", yesterday was: " + str(yesterday) +
-                " and so new data must be downloaded."
+                (
+                        "Request for dataset: {},  location: {}, start date: {}, end date: {}. " +
+                        "Total hits: {}, records returned: {}, returned IDs: {}"
+                ).format(
+                    dataset, geojson_file_path, time_start, time_end,
+                    scenes['totalHits'], scenes['recordsReturned'], entity_ids
+                )
             )
-            return True
 
-        else:
-            self.logger.info(
-                "Data were last downloaded on: " + str(last_downloaded) +
-                ", yesterday was: " + str(yesterday) +
-                " and so there is no need to download the data again. I'll try again tomorrow."
-            )
-            return False
+        if entity_ids is None:
+            return 0
 
-    def __create_array_of_downloadable_days(self, last_downloaded_day, yesterday):
-        downloadable_days = []
+        return True
 
-        while last_downloaded_day < yesterday:
-            last_downloaded_day = last_downloaded_day + datetime.timedelta(days=1)
-            downloadable_days.append(last_downloaded_day)
 
-        return downloadable_days
 
-    def init(self):
-        """
-        Method initializes filesystem structure. Deleting old temp directories and creating new working directory
-        specified in folder self.working_directory.
+    def __send_request(self, endpoint, payload_dict=None, max_retries=5):
+        if payload_dict is None:
+            payload_dict = {}
 
-        :return: nothing
-        """
+        endpoint = str(os.path.join(self.api_url, endpoint))
+        payload_json = json.dumps(payload_dict)
 
-        from shutil import rmtree
+        headers = {}
 
-        self.logger.info("Initial cleanup: Deleting " + self.root_dir + "/__pycache__")
-        rmtree(self.root_dir + "/__pycache__", ignore_errors=True)
+        if (endpoint != 'login') and (endpoint != 'login-token'):
+            if self.api_token_valid_until < datetime.datetime.utcnow():
+                self.__login_token(self.username, self.token)
 
-        self.logger.info("Initial cleanup: Deleting " + self.workdir)
-        # rmtree(self.workdir, ignore_errors=True) # TODO workdir se má mazat, ale teď tam mám dočasně poslední aktualizaci
+            headers['X-Auth-Token'] = self.api_token
 
-        self.logger.info("Initial cleanup: Creating directory " + self.workdir)
-        Path(self.workdir).mkdir(parents=True, exist_ok=True)
+        data = self.__retry_request(endpoint, payload_json, max_retries, headers)
 
-    def run(self):
-        self.init()
+        if data.status_code != 200:
+            raise APIRequestNotOK(status_code=data.status_code)
 
-        self.logger.info("=== DOWNLOADER STARTED ===")
+        return data.content
 
-    def download_to_present(self):
-        yesterday = datetime.datetime.utcnow().date() - datetime.timedelta(days=1)
-        last_downloaded_day = self.__get_last_downloaded_day()
+    def __retry_request(self, endpoint, payload, max_retries, headers=None, timeout=10, sleep=5):
+        if headers is None:
+            headers = {}
 
-        if not self.__should_download_new_data(last_downloaded_day, yesterday):
-            # Data are up-to-date until yesterday, hence there is no need to download next data.
-            # We can return True, since everything is downloaded.
-            return True
+        retry = 0
+        while max_retries > retry:
+            self.logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
+            try:
+                response = requests.post(endpoint, payload, headers=headers, timeout=timeout)
+                return response
 
-        downloadable_days = self.__create_array_of_downloadable_days(last_downloaded_day, yesterday)
+            except requests.exceptions.Timeout:
+                retry += 1
+                logging.info('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+                sleep = (1 + random.random()) * sleep * 100
+                time.sleep(sleep)
 
-        self.logger.info("Days that must be downloaded: " + str(downloadable_days))
+        raise APIRequestTimeout(retry=retry)
