@@ -80,9 +80,21 @@ class Downloader:
     def run(self):
         days_to_download = self.__get_downloadable_days()
 
+        geojsons = {}
+        geojson_files_paths = [os.path.join('geojson', geojson_file) for geojson_file in os.listdir('geojson')]
+        for geojson_file_path in geojson_files_paths:
+            with open(geojson_file_path, 'r') as geojson_file:
+                geojsons.update({geojson_file_path: json.loads(geojson_file.read())})
+
         for day in days_to_download:
             for dataset in self.__demanded_datasets:
-                self.api_connector.download_dataset(dataset, day, day)
+                for geojson_key in geojsons.keys():
+                    self.logger.info(
+                        "Request for download dataset: {}, location: {}, date_start: {}, date_end: {}.".format(
+                            dataset, geojson_key, day, day
+                        )
+                    )
+                    self.api_connector.download_dataset(dataset, geojsons[geojson_key], day, day)
 
     def __get_last_downloaded_day(self):  # TODO rewrite for S3 storage
         last_downloaded_day_file = open('workdir/last_downloaded_day.json')

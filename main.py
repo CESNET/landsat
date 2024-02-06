@@ -30,7 +30,7 @@ def setup_logging(current_path):
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(config.log_level)
     stdout_handler.setFormatter(log_format)
-    logger_landsat.addHandler(stdout_handler)   
+    logger_landsat.addHandler(stdout_handler)
 
 if __name__ == '__main__':
     logger = logging.getLogger(config.log_logger)
