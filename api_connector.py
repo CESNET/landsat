@@ -4,6 +4,9 @@ import logging
 import os
 import random
 import time
+import re
+
+from pathlib import Path
 
 import requests
 
@@ -56,11 +59,37 @@ class APIDownloadRequestReturnedFewerURLs(APIConnectorError):
             self.message = message
 
 
+class APIErrorDownloadingOrCatalogizing(APIConnectorError):
+    def __init__(self, message="Error when downloading or catalogizing data!", downloadable_urls=None):
+        self.message = message
+        for url in downloadable_urls:
+            message = message + '\n' + str(url)
+
+        super().__init__(self.message)
+
+
+class APIUrlDoNotContainsFilename(Exception):
+    def __init__(self, message="URL does not return filename!", url=None):
+        if url is not None:
+            self.message = message + " " + str(url)
+        else:
+            self.message = message
+
+        super().__init__(self.message)
+
+
 class APIConnector:
     api_url = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 
-    def __init__(self, logger=logging.getLogger("APIConnector"), username=None, token=None):
+    def __init__(
+            self,
+            logger=logging.getLogger("APIConnector"),
+            username=None,
+            token=None,
+            download_directory='download'
+    ):
         self.logger = logger
+        self.download_directory = download_directory
         self.__login_token(username, token)
 
     def __login_token(self, username=None, token=None):
@@ -138,11 +167,16 @@ class APIConnector:
 
         return filtered_download_options
 
+    def __unique_urls(self, available_urls):
+        unique_urls = list({url_dict['url']: url_dict for url_dict in available_urls}.values())
+        return unique_urls
+
     def __download_request(self, download_options):
         available_urls = []
-        preparing_urls = []
 
         while True:
+            preparing_urls = []
+
             for download_option in download_options:
                 api_payload = {
                     "downloads": [
@@ -165,13 +199,95 @@ class APIConnector:
                         }
                     )
 
+                for preparing_download in download_request['data']['preparingDownloads']:
+                    preparing_urls.append(
+                        {
+                            "entityId": download_option['entityId'],
+                            "productId": download_option['id'],
+                            "url": preparing_download['url']
+                        }
+                    )
+
             if not preparing_urls:
-                continue
+                break
+
+            time.sleep(5)
+
+        available_urls = self.__unique_urls(available_urls)
 
         if len(available_urls) < len(download_options):
-            raise
+            raise APIDownloadRequestReturnedFewerURLs(
+                entity_ids_count=len(download_options), urls_count=len(available_urls)
+            )
 
-        return list(available_urls)
+        return available_urls
+
+    def __get_downloadable_urls(self, download_options, entity_display_ids, time_start, time_end, dataset):
+        downloadable_urls = self.__download_request(download_options)
+
+        for downloadable_url in downloadable_urls:
+            downloadable_url.update(
+                {
+                    "displayId": entity_display_ids[downloadable_url['entityId']],
+                    "dataset": dataset,
+                    "start": time_start,
+                    "end": time_end
+                }
+            )
+
+        return downloadable_urls
+
+    def __check_if_file_exists(self, filename):
+        #todo check if file exists
+        # if the file exists, return True
+        return False
+
+    def __download_url(self, url):
+        response = requests.get(url, stream=True)
+
+        Path(self.download_directory).mkdir(exist_ok=True)
+
+        filename = None
+
+        for content_disposition in response.headers['Content-Disposition'].split(' '):
+            if 'filename' in content_disposition:
+                filename = re.findall(r'"([^"]*)"', content_disposition)[0]
+
+        if filename is None:
+            raise APIUrlDoNotContainsFilename(url=url)
+
+        if self.__check_if_file_exists(filename):
+            return False
+
+        downloaded_file_path = os.path.join(self.download_directory, filename)
+        Path(downloaded_file_path).touch()
+
+        self.logger.info("Downloading " + url + " into " + downloaded_file_path + ".")
+
+        with open(downloaded_file_path, mode='wb') as downloaded_file:
+            for chunk in response.iter_content(chunk_size=(1024 * 1024)):
+                downloaded_file.write(chunk)
+
+        return downloaded_file_path
+
+    def __save_to_s3(self, downloaded_file_path):
+        #todo save to s3
+        pass
+
+    def __catalogize_file(self, file_metadata, downloaded_file_path):
+        #todo catalog to stac
+        pass
+
+    def __download_and_catalogize(self, downloadable_urls):
+        for downloadable_url in downloadable_urls:
+            downloaded_file_path = self.__download_url(downloadable_url['url'])
+            if downloaded_file_path is False:
+                continue
+
+            self.__save_to_s3(downloaded_file_path)
+            self.__catalogize_file(downloadable_url, downloaded_file_path)
+
+        return True
 
     def download_dataset(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
         self.__scene_list_remove(label)
@@ -193,16 +309,12 @@ class APIConnector:
 
         download_options = self.__download_options(label, dataset)
 
-        available_urls = self.__download_request(download_options)
+        downloadable_urls = self.__get_downloadable_urls(
+            download_options, entity_display_ids, time_start, time_end, dataset
+        )
 
-        for available_url in available_urls:
-            available_url.update(
-                {
-                    "displayId": entity_display_ids[available_url['entityId']],
-                    "start": time_start,
-                    "end": time_end
-                }
-            )
+        if not self.__download_and_catalogize(downloadable_urls):
+            raise APIErrorDownloadingOrCatalogizing(downloadable_urls=downloadable_urls)
 
         self.__scene_list_remove(label)
 
