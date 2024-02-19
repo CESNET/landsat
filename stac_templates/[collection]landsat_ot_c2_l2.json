@@ -1,9 +1,9 @@
 {
   "stac_version": "1.0.0",
   "stac_extensions": [],
-  "id": "landsat_ot_c2_l1",
+  "id": "landsat_ot_c2_l2",
   "type": "Collection",
-  "title": "Landsat 8-9 OLI/TIRS C2 L1",
+  "title": "Landsat 8-9 OLI/TIRS C2 L2",
   "version": "1.0",
   "description": "The USGS Earth Resources Observation and Science (EROS) Center archive holds data collected by the Landsat suite of satellites, beginning with Landsat 1 in 1972.  Landsat 8, launched February 11, 2013, is the latest Landsat sensor.",
   "license": "proprietary",
@@ -33,7 +33,7 @@
     {
       "rel": "self",
       "type": "application/json",
-      "href": "http://stac.cesnet.cz/collections/landsat_ot_c2_l1"
+      "href": "http://stac.cesnet.cz/collections/landsat_ot_c2_l2"
     },
     {
       "rel": "root",
@@ -43,7 +43,7 @@
     {
       "rel": "items",
       "type": "application/geo+json",
-      "href": "http://stac.cesnet.cz/collections/landsat_ot_c2_l1/items"
+      "href": "http://stac.cesnet.cz/collections/landsat_ot_c2_l2/items"
     },
     {
       "href": "https://www.usgs.gov/faqs/are-there-any-restrictions-use-or-redistribution-landsat-data",

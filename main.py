@@ -4,16 +4,16 @@ import sys
 import time
 from logging.handlers import TimedRotatingFileHandler
 
-import config.config as config
+import config.landsat_config as config
 
 from downloader import *
 
 
 def setup_logging(current_path):
-    log_dir = current_path + '/' + config.log_directory
-    log_file = log_dir + '/' + config.log_name
+    log_dir = os.path.join(current_path, config.log_directory)
+    log_file = os.path.join(str(log_dir), config.log_name)
 
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    Path(str(log_dir)).mkdir(parents=True, exist_ok=True)
 
     logger_landsat = logging.getLogger(config.log_logger)
     logger_landsat.setLevel(config.log_level)
@@ -32,6 +32,7 @@ def setup_logging(current_path):
     stdout_handler.setFormatter(log_format)
     logger_landsat.addHandler(stdout_handler)
 
+
 if __name__ == '__main__':
     logger = logging.getLogger(config.log_logger)
 
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     setup_logging(root_dir)
     logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    downloader = Downloader(root_dir=root_dir, logger=logger)
+    downloader = Downloader(root_directory=root_dir, working_directory=config.working_directory, logger=logger)
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
     while True:

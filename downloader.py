@@ -10,11 +10,16 @@ from config import m2m_credentials
 
 
 class Downloader:
+    """
     __demanded_datasets = [
         "landsat_ot_c2_l1", "landsat_ot_c2_l2",
         "landsat_etm_c2_l1", "landsat_etm_c2_l2",
         "landsat_tm_c2_l1", "landsat_tm_c2_l2",
         "landsat_mss_c2_l1"
+    ]
+    """
+    __demanded_datasets = [
+        "landsat_ot_c2_l1"
     ]
 
     __dataset_fullname = {
@@ -27,15 +32,23 @@ class Downloader:
         "landsat_mss_c2_l1": "Landsat 1-5 MSS C2 L1"
     }
 
-    def __init__(self, username=None, token=None, root_dir=None, logger=logging.getLogger('Downloader')):
+    def __init__(
+            self,
+            username=None, token=None,
+            root_directory=None, working_directory=None,
+            logger=logging.getLogger('Downloader')
+    ):
         logger.info("=== DOWNLOADER INITIALIZING ===")
 
-        if root_dir is None:
-            raise Exception("root_dir must be specified")
+        if root_directory is None:
+            raise Exception("root_directory must be specified")
 
-        self.root_dir = root_dir
+        if working_directory is None:
+            raise Exception("working_directory must be specified")
+
+        self.root_directory = root_directory
+        self.workdir = str(os.path.join(self.root_directory, working_directory))
         self.logger = logger
-        self.workdir = str(os.path.join(root_dir, 'workdir'))
 
         self.__clean_up()
 
@@ -52,7 +65,8 @@ class Downloader:
         self.api_connector = api_connector.APIConnector(
             logger=self.logger,
             username=self.username,
-            token=self.token
+            token=self.token,
+            download_directory=self.workdir
         )
 
         self.logger.info('=== DOWNLOADER INITIALIZED ===')
@@ -67,7 +81,7 @@ class Downloader:
 
         from shutil import rmtree
 
-        pycache_dir = os.path.join(self.root_dir, "__pycache__")
+        pycache_dir = os.path.join(self.root_directory, "__pycache__")
         self.logger.info("Initial cleanup: Deleting " + pycache_dir)
         rmtree(pycache_dir, ignore_errors=True)
 

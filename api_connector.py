@@ -10,6 +10,8 @@ from pathlib import Path
 
 import requests
 
+from stac_connector import STACConnector
+
 
 class APIConnectorError(Exception):
     def __init__(self, message="API Connector General Error!"):
@@ -63,7 +65,7 @@ class APIErrorDownloadingOrCatalogizing(APIConnectorError):
     def __init__(self, message="Error when downloading or catalogizing data!", downloadable_urls=None):
         self.message = message
         for url in downloadable_urls:
-            message = message + '\n' + str(url)
+            self.message = self.message + '\n' + str(url)
 
         super().__init__(self.message)
 
@@ -75,6 +77,15 @@ class APIUrlDoNotContainsFilename(Exception):
         else:
             self.message = message
 
+        super().__init__(self.message)
+
+
+class APIDownloadedFileHasDifferentSize(Exception):
+    def __init__(
+            self, message="Downloaded file size not matching expected file size!",
+            content_length=None, file_size=None
+    ):
+        self.message = message + " Content-length: " + content_length + ", file size: " + file_size + "."
         super().__init__(self.message)
 
 
@@ -238,7 +249,7 @@ class APIConnector:
         return downloadable_urls
 
     def __check_if_file_exists(self, filename):
-        #todo check if file exists
+        # todo check if file exists
         # if the file exists, return True
         return False
 
@@ -268,14 +279,19 @@ class APIConnector:
             for chunk in response.iter_content(chunk_size=(1024 * 1024)):
                 downloaded_file.write(chunk)
 
+        content_length = int(response.headers['Content-Length'])
+        file_size = os.stat(downloaded_file_path).st_size
+        if content_length != file_size:
+            raise APIDownloadedFileHasDifferentSize(content_length=content_length, file_size=file_size)
+
         return downloaded_file_path
 
     def __save_to_s3(self, downloaded_file_path):
-        #todo save to s3
+        # todo save to s3
         pass
 
     def __catalogize_file(self, file_metadata, downloaded_file_path):
-        #todo catalog to stac
+        stac_connector = STACConnector(logger=self.logger)
         pass
 
     def __download_and_catalogize(self, downloadable_urls):
@@ -283,6 +299,7 @@ class APIConnector:
             downloaded_file_path = self.__download_url(downloadable_url['url'])
             if downloaded_file_path is False:
                 continue
+
 
             self.__save_to_s3(downloaded_file_path)
             self.__catalogize_file(downloadable_url, downloaded_file_path)
@@ -324,7 +341,7 @@ class APIConnector:
         if payload_dict is None:
             payload_dict = {}
 
-        endpoint = str(os.path.join(self.api_url, endpoint))
+        endpoint_full_url = str(os.path.join(self.api_url, endpoint))
         payload_json = json.dumps(payload_dict)
 
         headers = {}
@@ -335,7 +352,7 @@ class APIConnector:
 
             headers['X-Auth-Token'] = self.api_token
 
-        data = self.__retry_request(endpoint, payload_json, max_retries, headers)
+        data = self.__retry_request(endpoint_full_url, payload_json, max_retries, headers)
 
         if data.status_code != 200:
             raise APIRequestNotOK(status_code=data.status_code)
