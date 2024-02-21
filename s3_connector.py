@@ -1,7 +1,7 @@
-import config.s3_config as s3_config
-
 import boto3
 import logging
+
+import config.s3_config as s3_config
 
 """
 Create file ./downloader/config/s3_config.py with following content:

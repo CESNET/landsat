@@ -2,7 +2,7 @@
 .git
 __pycache__
 log
-config/m2m_credentials.py
+config/m2m_config.py
 config/stac_config.py
 config/s3_config.py
 workdir

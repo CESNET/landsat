@@ -4,55 +4,54 @@ import logging
 import os
 import random
 import time
-import re
-
-from pathlib import Path
-
 import requests
 
-from stac_connector import STACConnector
+import config.m2m_config as m2m_config
 
 
-class APIConnectorError(Exception):
-    def __init__(self, message="API Connector General Error!"):
+class M2MAPIConnectorError(Exception):
+    def __init__(self, message="M2MAPI Connector General Error!"):
         self.message = message
         super().__init__(self.message)
 
 
-class APITokenNotObtainedError(APIConnectorError):
-    def __init__(self, message="API Token not obtained!"):
+class M2MAPITokenNotObtainedError(M2MAPIConnectorError):
+    def __init__(self, message="M2MAPI Token not obtained!"):
         self.message = message
         super().__init__(self.message)
 
 
-class APICredentialsNotProvided(APIConnectorError):
-    def __init__(self, message="API Credentials were not provided!"):
+class M2MAPICredentialsNotProvided(M2MAPIConnectorError):
+    def __init__(self, message="M2MAPI Credentials were not provided!"):
         self.message = message
         super().__init__(self.message)
 
 
-class APIRequestTimeout(APIConnectorError):
-    def __init__(self, message="API Request Timeouted", retry=None):
+class M2MAPIRequestTimeout(M2MAPIConnectorError):
+    def __init__(self, message="M2MAPI Request Timeouted.", retry=None, max_retries=None):
         if retry is not None:
-            self.message = "API Request Timeouted after {} retries.".format(retry)
+            self.message = "M2MAPI Request Timeouted after {} retries.".format(retry)
+
+            if max_retries is not None:
+                self.message = self.message + " Max retries: {}.".format(max_retries)
         else:
             self.message = message
 
         super().__init__(self.message)
 
 
-class APIRequestNotOK(APIConnectorError):
-    def __init__(self, message="API Request status code not 200/OK!", status_code=None):
+class M2MAPIRequestNotOK(M2MAPIConnectorError):
+    def __init__(self, message="M2MAPI Request status code not 200/OK!", status_code=None):
         if status_code is not None:
-            self.message = "API Request status code is {}!".format(status_code)
+            self.message = "M2MAPI Request status code is {}!".format(status_code)
         else:
             self.message = message
 
 
-class APIDownloadRequestReturnedFewerURLs(APIConnectorError):
+class M2MAPIDownloadRequestReturnedFewerURLs(M2MAPIConnectorError):
     def __init__(
             self,
-            message="API download-request endpoint returned fewer URLs! entityIds count: {}, URLs count: {}.",
+            message="M2MAPI download-request endpoint returned fewer URLs! entityIds count: {}, URLs count: {}.",
             entity_ids_count=None, urls_count=None
     ):
         if entity_ids_count and urls_count:
@@ -61,8 +60,8 @@ class APIDownloadRequestReturnedFewerURLs(APIConnectorError):
             self.message = message
 
 
-class APIErrorDownloadingOrCatalogizing(APIConnectorError):
-    def __init__(self, message="Error when downloading or catalogizing data!", downloadable_urls=None):
+class M2MAPIDownloadableUrlsNotObtained(M2MAPIConnectorError):
+    def __init__(self, message="Downloadable URLs not obtained!", downloadable_urls=None):
         self.message = message
         for url in downloadable_urls:
             self.message = self.message + '\n' + str(url)
@@ -70,42 +69,21 @@ class APIErrorDownloadingOrCatalogizing(APIConnectorError):
         super().__init__(self.message)
 
 
-class APIUrlDoNotContainsFilename(Exception):
-    def __init__(self, message="URL does not return filename!", url=None):
-        if url is not None:
-            self.message = message + " " + str(url)
-        else:
-            self.message = message
-
-        super().__init__(self.message)
-
-
-class APIDownloadedFileHasDifferentSize(Exception):
-    def __init__(
-            self, message="Downloaded file size not matching expected file size!",
-            content_length=None, file_size=None
-    ):
-        self.message = message + " Content-length: " + content_length + ", file size: " + file_size + "."
-        super().__init__(self.message)
-
-
-class APIConnector:
-    api_url = "https://m2m.cr.usgs.gov/api/api/json/stable/"
-
+class M2MAPIConnector:
     def __init__(
             self,
             logger=logging.getLogger("APIConnector"),
-            username=None,
-            token=None,
-            download_directory='download'
+            username=m2m_config.api_url,
+            token=m2m_config.api_url,
+            api_url=m2m_config.api_url
     ):
+        self.api_url = api_url
         self.logger = logger
-        self.download_directory = download_directory
         self.__login_token(username, token)
 
     def __login_token(self, username=None, token=None):
         if (username is None) or (token is None):
-            raise APICredentialsNotProvided()
+            raise M2MAPICredentialsNotProvided()
 
         self.username = username
         self.token = token
@@ -124,7 +102,7 @@ class APIConnector:
         self.api_token = response_content['data']
 
         if self.api_token is None:
-            raise APITokenNotObtainedError()
+            raise M2MAPITokenNotObtainedError()
 
     def scene_search(self, dataset, geojson, day_start, day_end):
         api_payload = {
@@ -157,7 +135,7 @@ class APIConnector:
 
         self.__send_request('scene-list-add', api_payload)
 
-    def __scene_list_remove(self, label):
+    def scene_list_remove(self, label):
         api_payload = {
             "listId": label
         }
@@ -227,13 +205,13 @@ class APIConnector:
         available_urls = self.__unique_urls(available_urls)
 
         if len(available_urls) < len(download_options):
-            raise APIDownloadRequestReturnedFewerURLs(
+            raise M2MAPIDownloadRequestReturnedFewerURLs(
                 entity_ids_count=len(download_options), urls_count=len(available_urls)
             )
 
         return available_urls
 
-    def __get_downloadable_urls(self, download_options, entity_display_ids, time_start, time_end, dataset):
+    def __get_list_of_urls(self, download_options, entity_display_ids, time_start, time_end, dataset):
         downloadable_urls = self.__download_request(download_options)
 
         for downloadable_url in downloadable_urls:
@@ -248,66 +226,8 @@ class APIConnector:
 
         return downloadable_urls
 
-    def __check_if_file_exists(self, filename):
-        # todo check if file exists
-        # if the file exists, return True
-        return False
-
-    def __download_url(self, url):
-        response = requests.get(url, stream=True)
-
-        Path(self.download_directory).mkdir(exist_ok=True)
-
-        filename = None
-
-        for content_disposition in response.headers['Content-Disposition'].split(' '):
-            if 'filename' in content_disposition:
-                filename = re.findall(r'"([^"]*)"', content_disposition)[0]
-
-        if filename is None:
-            raise APIUrlDoNotContainsFilename(url=url)
-
-        if self.__check_if_file_exists(filename):
-            return False
-
-        downloaded_file_path = os.path.join(self.download_directory, filename)
-        Path(downloaded_file_path).touch()
-
-        self.logger.info("Downloading " + url + " into " + downloaded_file_path + ".")
-
-        with open(downloaded_file_path, mode='wb') as downloaded_file:
-            for chunk in response.iter_content(chunk_size=(1024 * 1024)):
-                downloaded_file.write(chunk)
-
-        content_length = int(response.headers['Content-Length'])
-        file_size = os.stat(downloaded_file_path).st_size
-        if content_length != file_size:
-            raise APIDownloadedFileHasDifferentSize(content_length=content_length, file_size=file_size)
-
-        return downloaded_file_path
-
-    def __save_to_s3(self, downloaded_file_path):
-        # todo save to s3
-        pass
-
-    def __catalogize_file(self, file_metadata, downloaded_file_path):
-        stac_connector = STACConnector(logger=self.logger)
-        pass
-
-    def __download_and_catalogize(self, downloadable_urls):
-        for downloadable_url in downloadable_urls:
-            downloaded_file_path = self.__download_url(downloadable_url['url'])
-            if downloaded_file_path is False:
-                continue
-
-
-            self.__save_to_s3(downloaded_file_path)
-            self.__catalogize_file(downloadable_url, downloaded_file_path)
-
-        return True
-
-    def download_dataset(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
-        self.__scene_list_remove(label)
+    def get_downloadable_urls(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
+        self.scene_list_remove(label)
 
         scenes = self.scene_search(dataset, geojson, time_start, time_end)
 
@@ -326,16 +246,9 @@ class APIConnector:
 
         download_options = self.__download_options(label, dataset)
 
-        downloadable_urls = self.__get_downloadable_urls(
-            download_options, entity_display_ids, time_start, time_end, dataset
-        )
+        downloadable_urls = self.__get_list_of_urls(download_options, entity_display_ids, time_start, time_end, dataset)
 
-        if not self.__download_and_catalogize(downloadable_urls):
-            raise APIErrorDownloadingOrCatalogizing(downloadable_urls=downloadable_urls)
-
-        self.__scene_list_remove(label)
-
-        return True
+        return downloadable_urls
 
     def __send_request(self, endpoint, payload_dict=None, max_retries=5):
         if payload_dict is None:
@@ -355,7 +268,7 @@ class APIConnector:
         data = self.__retry_request(endpoint_full_url, payload_json, max_retries, headers)
 
         if data.status_code != 200:
-            raise APIRequestNotOK(status_code=data.status_code)
+            raise M2MAPIRequestNotOK(status_code=data.status_code)
 
         return data.content
 
@@ -371,9 +284,10 @@ class APIConnector:
                 return response
 
             except requests.exceptions.Timeout:
+                self.logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+
                 retry += 1
-                logging.info('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
-                sleep = (1 + random.random()) * sleep * 100
+                sleep = (1 + random.random()) * sleep
                 time.sleep(sleep)
 
-        raise APIRequestTimeout(retry=retry)
+        raise M2MAPIRequestTimeout(retry=retry, max_retries=max_retries)

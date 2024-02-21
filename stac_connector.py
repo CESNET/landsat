@@ -4,7 +4,6 @@ import logging
 import os
 import random
 import time
-
 import requests
 
 import config.stac_config as stac_config
@@ -42,9 +41,12 @@ class STACTokenNotObtainedError(STACConnectorError):
 
 
 class STACRequestTimeout(STACConnectorError):
-    def __init__(self, message="STAC Request Timeouted", retry=None):
+    def __init__(self, message="STAC Request Timeouted", retry=None, max_retries=None):
         if retry is not None:
             self.message = "STAC Request Timeouted after {} retries.".format(retry)
+
+            if max_retries is not None:
+                self.message = self.message + " Max retries: {}.".format(max_retries)
         else:
             self.message = message
 
@@ -116,12 +118,13 @@ class STACConnector:
                 return response
 
             except requests.exceptions.Timeout:
+                self.logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+
                 retry += 1
-                logging.info('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
-                sleep = (1 + random.random()) * sleep * 100
+                sleep = (1 + random.random()) * sleep
                 time.sleep(sleep)
 
-        raise STACRequestTimeout(retry=retry)
+        raise STACRequestTimeout(retry=retry, max_retries=max_retries)
 
     def __login(self, username=None, password=None):
         if (username is None) or (password is None):

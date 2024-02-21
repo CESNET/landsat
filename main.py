@@ -2,46 +2,51 @@ import datetime
 import re
 import sys
 import time
+import os
+import logging
+
+from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 
-import config.landsat_config as config
+import config.landsat_config as landsat_config
 
-from downloader import *
+from landsat_downloader import LandsatDownloader
 
 
 def setup_logging(current_path):
-    log_dir = os.path.join(current_path, config.log_directory)
-    log_file = os.path.join(str(log_dir), config.log_name)
+    log_dir = os.path.join(current_path, landsat_config.log_directory)
+    log_file = os.path.join(str(log_dir), landsat_config.log_name)
 
     Path(str(log_dir)).mkdir(parents=True, exist_ok=True)
 
-    logger_landsat = logging.getLogger(config.log_logger)
-    logger_landsat.setLevel(config.log_level)
+    logger_landsat = logging.getLogger(landsat_config.log_logger)
+    logger_landsat.setLevel(landsat_config.log_level)
 
     log_format = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 
     rotating_info_handler = TimedRotatingFileHandler(log_file, when="midnight")
     rotating_info_handler.setFormatter(log_format)
-    rotating_info_handler.setLevel(config.log_level)
+    rotating_info_handler.setLevel(landsat_config.log_level)
     rotating_info_handler.suffix = "%Y%m%d%H%M%S"
     rotating_info_handler.extMatch = re.compile(r"^\d{14}$")
     logger_landsat.addHandler(rotating_info_handler)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(config.log_level)
+    stdout_handler.setLevel(landsat_config.log_level)
     stdout_handler.setFormatter(log_format)
     logger_landsat.addHandler(stdout_handler)
 
 
 if __name__ == '__main__':
-    logger = logging.getLogger(config.log_logger)
+    logger = logging.getLogger(landsat_config.log_logger)
 
     root_dir = str(Path(__file__).parent.resolve())
 
     setup_logging(root_dir)
     logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    downloader = Downloader(root_directory=root_dir, working_directory=config.working_directory, logger=logger)
+    downloader = LandsatDownloader(root_directory=root_dir, working_directory=landsat_config.working_directory,
+                                   logger=logger)
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
     while True:
