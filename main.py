@@ -22,7 +22,7 @@ def setup_logging(current_path):
     logger_landsat = logging.getLogger(landsat_config.log_logger)
     logger_landsat.setLevel(landsat_config.log_level)
 
-    log_format = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    log_format = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-4.4s]  %(message)s")
 
     rotating_info_handler = TimedRotatingFileHandler(log_file, when="midnight")
     rotating_info_handler.setFormatter(log_format)
@@ -39,7 +39,6 @@ def setup_logging(current_path):
 
 if __name__ == '__main__':
     logger = logging.getLogger(landsat_config.log_logger)
-
     root_dir = str(Path(__file__).parent.resolve())
 
     setup_logging(root_dir)
@@ -56,9 +55,19 @@ if __name__ == '__main__':
             datetime.time(hour=9, minute=00)
         )
 
-        downloader.run()
+        exception_occurred = False
+        try:
+            downloader.run()
+        except Exception as exception:
+            exception_occurred = True
+            logger.critical(exception, exc_info=True)
+
+        if exception_occurred:
+            time.sleep(60 * 60)
+            continue
 
         while datetime.datetime.utcnow() < next_run_at:
             sleep_for = int((next_run_at - datetime.datetime.utcnow()).total_seconds())
-            logger.info("Downloader will wait " + str(sleep_for) + " seconds. Next run will be at " + str(next_run_at))
+            logger.info(
+                "Downloader will wait " + str(sleep_for) + " seconds. Next run will be at " + str(next_run_at))
             time.sleep(sleep_for)

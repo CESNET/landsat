@@ -134,7 +134,7 @@ class STACConnector:
         self.password = password
 
         self.stac_token = None
-        self.api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+        self.api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(days=1)
 
         stac_payload = {
             "username": self.username,
@@ -256,11 +256,11 @@ class STACConnector:
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'Authorization': 'Bearer ' + stac_config.auth_token
+            'Authorization': 'Bearer ' + self.stac_token
         }
 
         data = open(path_to_json)
-        response = requests.post(stac_config.base_url + '/collections' + '/' + dataset + '/items',
+        response = requests.post(self.stac_base_url + '/collections' + '/' + dataset + '/items',
                                  headers=headers, data=data)
 
         self.logger.info("Data registered to STAC; registered json=" + path_to_json + ", response=" + str(response))

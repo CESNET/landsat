@@ -15,19 +15,26 @@ host_bucket = "copernicus-era5"
 
 
 class S3Connector:
-    s3_client = boto3.client(
-        service_name='s3',
-        endpoint_url=s3_config.host_base,
-        aws_access_key_id=s3_config.access_key,
-        aws_secret_access_key=s3_config.secret_key,
-    )
-    bucket = s3_config.host_bucket
-
     keys = []
     keys_up_to_date = False
 
-    def __init__(self):
-        self.logger = logging.getLogger('downloader_logger')
+    def __init__(
+            self,
+            logger=logging.getLogger("S3Connector"),
+            service_name='s3',
+            s3_endpoint=s3_config.host_base,
+            access_key=s3_config.access_key,
+            secret_key=s3_config.secret_key,
+            host_bucket=s3_config.host_bucket
+    ):
+        self.logger = logger
+        self.s3_client = boto3.client(
+            service_name=service_name,
+            endpoint_url=s3_endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+        self.bucket = host_bucket
 
     def upload_file(self, local_filename, bucket_key):
         self.logger.info("Uploading file=" + local_filename + " to S3 as key=" + bucket_key + ".")

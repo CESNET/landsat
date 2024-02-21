@@ -63,7 +63,8 @@ class LandsatDownloader:
 
     def __init__(
             self,
-            username=None, token=None,
+            m2m_username=None, m2m_token=None,
+            stac_username=None, stac_password=None,
             root_directory=None, working_directory=None,
             logger=logging.getLogger('Downloader')
     ):
@@ -81,21 +82,8 @@ class LandsatDownloader:
 
         self.__clean_up()
 
-        if username is not None:
-            self.username = username
-        else:
-            self.username = m2m_config.username
-
-        if token is not None:
-            self.token = token
-        else:
-            self.token = m2m_config.token
-
-        self.api_connector = M2MAPIConnector(
-            logger=self.logger,
-            username=self.username,
-            token=self.token
-        )
+        self.m2m_api_connector = M2MAPIConnector(logger=self.logger)
+        self.stac_connector = STACConnector(logger=logger)
 
         self.logger.info('=== DOWNLOADER INITIALIZED ===')
 
@@ -186,11 +174,10 @@ class LandsatDownloader:
 
         self.logger.info("Downloading " + url + " into " + downloaded_file_path + ".")
 
-        """
         with open(downloaded_file_path, mode='wb') as downloaded_file:
             for chunk in response.iter_content(chunk_size=(1024 * 1024)):
                 downloaded_file.write(chunk)
-        """
+
         content_length = int(response.headers['Content-Length'])
         file_size = os.stat(downloaded_file_path).st_size
         if content_length != file_size:
@@ -228,10 +215,10 @@ class LandsatDownloader:
                     )
 
                     label = "landsat_downloader_"
-                    downloadable_urls = self.api_connector.get_downloadable_urls(
+                    downloadable_urls = self.m2m_api_connector.get_downloadable_urls(
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=label
                     )
 
                     self.__download_and_catalogize(downloadable_urls)
 
-                    self.api_connector.scene_list_remove(label)
+                    self.m2m_api_connector.scene_list_remove(label)
