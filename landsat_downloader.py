@@ -198,6 +198,7 @@ class LandsatDownloader:
         content_length = int(response.headers['Content-Length'])
         file_size = os.stat(downloaded_file_path).st_size
         if content_length != file_size:
+            Path(downloaded_file_path).unlink(missing_ok=False)
             raise LandsatDownloaderDownloadedFileHasDifferentSize(content_length=content_length, file_size=file_size)
 
         downloaded_file.update({"downloaded_file_path": downloaded_file_path})
@@ -207,7 +208,16 @@ class LandsatDownloader:
     def _download_and_catalogize(self, downloadable_urls):
         for downloaded_file in downloadable_urls:
 
-            downloaded_file = self._download_file(downloaded_file)
+            while True:
+                try:
+                    downloaded_file = self._download_file(downloaded_file)
+                    break
+
+                except LandsatDownloaderDownloadedFileHasDifferentSize as e:
+                    self.logger.error(e)
+                    self.logger.info("Redownloading...")
+                    continue
+
             if downloaded_file is False:
                 # File has already been downloaded, let's continue with next file.
                 continue
