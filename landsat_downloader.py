@@ -11,6 +11,7 @@ import config.m2m_config as m2m_config
 
 from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
+from s3_connector import S3Connector
 
 
 class LandsatDownloaderError(Exception):
@@ -34,7 +35,7 @@ class LandsatDownloaderDownloadedFileHasDifferentSize(Exception):
             self, message="Downloaded file size not matching expected file size!",
             content_length=None, file_size=None
     ):
-        self.message = message + " Content-length: " + content_length + ", file size: " + file_size + "."
+        self.message = message + " Content-length: " + str(content_length) + ", file size: " + str(file_size) + "."
         super().__init__(self.message)
 
 
@@ -47,11 +48,11 @@ class LandsatDownloader:
         "landsat_mss_c2_l1"
     ]
     """
-    __demanded_datasets = [
+    _demanded_datasets = [
         "landsat_ot_c2_l1"
     ]
 
-    __dataset_fullname = {
+    _dataset_fullname = {
         "landsat_ot_c2_l1": "Landsat 8-9 OLI/TIRS C2 L1",
         "landsat_ot_c2_l2": "Landsat 8-9 OLI/TIRS C2 L2",
         "landsat_etm_c2_l1": "Landsat 7 ETM+ C2 L1",
@@ -80,14 +81,15 @@ class LandsatDownloader:
         self.workdir = str(os.path.join(self.root_directory, working_directory))
         self.logger = logger
 
-        self.__clean_up()
+        self._clean_up()
 
         self.m2m_api_connector = M2MAPIConnector(logger=self.logger)
         self.stac_connector = STACConnector(logger=logger)
+        self.s3_connector = S3Connector(logger=logger)
 
         self.logger.info('=== DOWNLOADER INITIALIZED ===')
 
-    def __clean_up(self):
+    def _clean_up(self):
         """
         Method initializes filesystem structure. Deleting old temp directories and creating new working directory
         specified in folder self.working_directory.
@@ -107,7 +109,7 @@ class LandsatDownloader:
         self.logger.info("Initial cleanup: Creating directory " + self.workdir)
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
 
-    def __get_last_downloaded_day(self):  # TODO rewrite for S3 storage
+    def _get_last_downloaded_day(self):  # TODO rewrite for S3 storage
         last_downloaded_day_file = open('workdir/last_downloaded_day.json')
         last_downloaded_day = datetime.datetime.strptime(
             json.load(last_downloaded_day_file)['last_downloaded_day'],
@@ -117,7 +119,7 @@ class LandsatDownloader:
 
         return last_downloaded_day
 
-    def __create_array_of_downloadable_days(self, date_from, date_to):
+    def _create_array_of_downloadable_days(self, date_from, date_to):
         downloadable_days = []
 
         while date_from < date_to:
@@ -126,34 +128,39 @@ class LandsatDownloader:
 
         return downloadable_days
 
-    def __get_downloadable_days(self):
+    def _get_downloadable_days(self):
         should_be_checked_since = datetime.datetime.utcnow().date() - datetime.timedelta(weeks=4)
-        last_downloaded_day = self.__get_last_downloaded_day()
+        last_downloaded_day = self._get_last_downloaded_day()
 
         if last_downloaded_day < should_be_checked_since:
             date_from = last_downloaded_day
         else:
             date_from = should_be_checked_since
 
-        downloadable_days = self.__create_array_of_downloadable_days(date_from, datetime.datetime.utcnow().date())
+        downloadable_days = self._create_array_of_downloadable_days(date_from, datetime.datetime.utcnow().date())
 
         return downloadable_days
 
-    def __check_if_file_exists(self, filename):
-        # todo check if file exists
+    def _check_if_file_exists(self, downloaded_file, expected_size):
         # if the file exists, return True
-        return False
+        return self.s3_connector.check_if_key_exists(downloaded_file['s3_bucket_key'], expected_size)
 
-    def __save_to_s3(self, downloaded_file_path):
-        # todo save to s3
+    def _save_to_s3(self, downloaded_file):
+        self.s3_connector.upload_file(
+            downloaded_file['downloaded_file_path'],
+            downloaded_file['s3_bucket_key']
+        )
+
+        Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False)
+
+        return downloaded_file
+
+    def __catalogize_file(self, downloaded_file):
+
         pass
 
-    def __catalogize_file(self, file_metadata, downloaded_file_path):
-        stac_connector = STACConnector(logger=self.logger)
-        pass
-
-    def __download_url(self, url):
-        response = requests.get(url, stream=True)
+    def _download_file(self, downloaded_file):
+        response = requests.get(downloaded_file['url'], stream=True)
 
         Path(self.workdir).mkdir(exist_ok=True)
 
@@ -164,40 +171,54 @@ class LandsatDownloader:
                 filename = re.findall(r'"([^"]*)"', content_disposition)[0]
 
         if filename is None:
-            raise LandsatDownloaderUrlDoNotContainsFilename(url=url)
+            raise LandsatDownloaderUrlDoNotContainsFilename(url=downloaded_file['url'])
 
-        if self.__check_if_file_exists(filename):
+        downloaded_file.update(
+            {
+                "filename": filename,
+                "s3_bucket_key": f"{downloaded_file['dataset']}/{filename}"
+            }
+        )
+
+        if self._check_if_file_exists(downloaded_file, response.headers['Content-Length']):
+            # Well the file has already been downloaded, so there is no need to download it again and this
+            # method cannot succeed in downloading the file that has already been downloaded. Let's return False.
+            self.logger.info(f"File {downloaded_file['s3_bucket_key']} has been already downloaded. Skipping.")
             return False
 
         downloaded_file_path = os.path.join(self.workdir, filename)
         Path(downloaded_file_path).touch()
 
-        self.logger.info("Downloading " + url + " into " + downloaded_file_path + ".")
+        self.logger.info("Downloading " + downloaded_file['url'] + " into " + downloaded_file_path + ".")
 
-        with open(downloaded_file_path, mode='wb') as downloaded_file:
+        with open(downloaded_file_path, mode='wb') as result_file:
             for chunk in response.iter_content(chunk_size=(1024 * 1024)):
-                downloaded_file.write(chunk)
+                result_file.write(chunk)
 
         content_length = int(response.headers['Content-Length'])
         file_size = os.stat(downloaded_file_path).st_size
         if content_length != file_size:
             raise LandsatDownloaderDownloadedFileHasDifferentSize(content_length=content_length, file_size=file_size)
 
-        return downloaded_file_path
+        downloaded_file.update({"downloaded_file_path": downloaded_file_path})
 
-    def __download_and_catalogize(self, downloadable_urls):
-        for downloadable_url in downloadable_urls:
-            downloaded_file_path = self.__download_url(downloadable_url['url'])
-            if downloaded_file_path is False:
+        return downloaded_file
+
+    def _download_and_catalogize(self, downloadable_urls):
+        for downloaded_file in downloadable_urls:
+
+            downloaded_file = self._download_file(downloaded_file)
+            if downloaded_file is False:
+                # File has already been downloaded, let's continue with next file.
                 continue
 
-            self.__save_to_s3(downloaded_file_path)
-            self.__catalogize_file(downloadable_url, downloaded_file_path)
+            downloaded_file = self._save_to_s3(downloaded_file)
+            self.__catalogize_file(downloaded_file)
 
         return True
 
     def run(self):
-        days_to_download = self.__get_downloadable_days()
+        days_to_download = self._get_downloadable_days()
 
         geojsons = {}
         geojson_files_paths = [os.path.join('geojson', geojson_file) for geojson_file in os.listdir('geojson')]
@@ -206,7 +227,7 @@ class LandsatDownloader:
                 geojsons.update({geojson_file_path: json.loads(geojson_file.read())})
 
         for day in days_to_download:
-            for dataset in self.__demanded_datasets:
+            for dataset in self._demanded_datasets:
                 for geojson_key in geojsons.keys():
                     self.logger.info(
                         "Request for download dataset: {}, location: {}, date_start: {}, date_end: {}.".format(
@@ -219,6 +240,6 @@ class LandsatDownloader:
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=label
                     )
 
-                    self.__download_and_catalogize(downloadable_urls)
+                    self._download_and_catalogize(downloadable_urls)
 
                     self.m2m_api_connector.scene_list_remove(label)

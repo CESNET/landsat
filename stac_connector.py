@@ -72,26 +72,26 @@ class STACConnector:
             templates_dir=stac_config.templates_dir,
             stac_base_url=stac_config.stac_base_url
     ):
-        self.logger = logger
-        self.templates_dir = templates_dir
-        self.stac_base_url = stac_base_url
-        self.__login(username=username, password=password)
+        self._logger = logger
+        self._templates_dir = templates_dir
+        self._stac_base_url = stac_base_url
+        self._login(username=username, password=password)
 
-    def __send_request(self, endpoint, payload_dict=None, max_retries=5):
+    def _send_request(self, endpoint, payload_dict=None, max_retries=5):
         if payload_dict is None:
             payload_dict = {}
 
-        endpoint_full_url = os.path.join(self.stac_base_url, endpoint)
+        endpoint_full_url = os.path.join(self._stac_base_url, endpoint)
 
         headers = {}
 
         if (endpoint != 'auth'):
-            if self.api_token_valid_until < datetime.datetime.utcnow():
-                self.__login(username=self.username, password=self.password)
+            if self._api_token_valid_until < datetime.datetime.utcnow():
+                self._login(username=self._username, password=self._password)
 
-            headers['Authorization'] = 'Bearer ' + self.stac_token
+            headers['Authorization'] = 'Bearer ' + self._stac_token
 
-        data = self.__retry_request(
+        data = self._retry_request(
             endpoint=endpoint_full_url, payload_dict=payload_dict,
             max_retries=max_retries, headers=headers
         )
@@ -101,13 +101,13 @@ class STACConnector:
 
         return data.content
 
-    def __retry_request(self, endpoint, payload_dict, max_retries, headers=None, timeout=10, sleep=5):
+    def _retry_request(self, endpoint, payload_dict, max_retries, headers=None, timeout=10, sleep=5):
         if headers is None:
             headers = {}
 
         retry = 0
         while max_retries > retry:
-            self.logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
+            self._logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
             try:
                 if 'auth' in endpoint:
                     response = requests.get(endpoint, auth=(payload_dict['username'], payload_dict['password']))
@@ -118,7 +118,7 @@ class STACConnector:
                 return response
 
             except requests.exceptions.Timeout:
-                self.logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+                self._logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
 
                 retry += 1
                 sleep = (1 + random.random()) * sleep
@@ -126,27 +126,27 @@ class STACConnector:
 
         raise STACRequestTimeout(retry=retry, max_retries=max_retries)
 
-    def __login(self, username=None, password=None):
+    def _login(self, username=None, password=None):
         if (username is None) or (password is None):
             raise STACCredentialsNotProvided()
 
-        self.username = username
-        self.password = password
+        self._username = username
+        self._password = password
 
-        self.stac_token = None
-        self.api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+        self._stac_token = None
+        self._api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(days=1)
 
         stac_payload = {
-            "username": self.username,
-            "password": self.password
+            "username": self._username,
+            "password": self._password
         }
 
-        response = self.__send_request('auth', stac_payload)
+        response = self._send_request('auth', stac_payload)
         response_content = json.loads(response)
 
-        self.stac_token = response_content['data']
+        self._stac_token = response_content['token']
 
-        if self.stac_token is None:
+        if self._stac_token is None:
             raise STACTokenNotObtainedError()
 
     @staticmethod
@@ -194,10 +194,10 @@ class STACConnector:
         :return: nothing
         """
 
-        self.logger.info("Creating STAC JSON for data; year=" + year + ", month=" + month + ", dataset=" + dataset)
+        self._logger.info("Creating STAC JSON for data; year=" + year + ", month=" + month + ", dataset=" + dataset)
 
         # Opening JSON template into Python dictionary feature_json
-        with open(self.templates_dir + '/' + '[feature]' + dataset + '.json') as json_file:
+        with open(self._templates_dir + '/' + '[feature]' + dataset + '.json') as json_file:
             json_content = json_file.read()
         feature_json = json.loads(json_content)
 
@@ -256,11 +256,11 @@ class STACConnector:
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'Authorization': 'Bearer ' + self.stac_token
+            'Authorization': 'Bearer ' + self._stac_token
         }
 
         data = open(path_to_json)
-        response = requests.post(self.stac_base_url + '/collections' + '/' + dataset + '/items',
+        response = requests.post(self._stac_base_url + '/collections' + '/' + dataset + '/items',
                                  headers=headers, data=data)
 
-        self.logger.info("Data registered to STAC; registered json=" + path_to_json + ", response=" + str(response))
+        self._logger.info("Data registered to STAC; registered json=" + path_to_json + ", response=" + str(response))
