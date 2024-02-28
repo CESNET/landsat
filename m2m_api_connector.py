@@ -242,7 +242,7 @@ class M2MAPIConnector:
         )
 
         if not entity_display_ids:
-            return 0
+            return []
 
         self.__scene_list_add(label, dataset, list(entity_display_ids.keys()))
 
