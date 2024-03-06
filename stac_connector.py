@@ -236,7 +236,7 @@ class STACConnector:
         if not self._save_json_to_file(feature_json, working_filename):
             raise Exception("Error when writing JSON to file: ", working_filename)
 
-    def register_stac_item(self, path_to_json, dataset):
+    def register_stac_item(self, json_data, dataset):
         """
         Method invokes POST request on a RESTO server specified in stac_config.base_url and sends there a .json file
         which represents a STAC item.
@@ -248,7 +248,7 @@ class STACConnector:
             -H 'Authorization: Bearer stac_auth_token' \
             -d @/path/to/stac_item.json
 
-        :param path_to_json: Path to POSTed .json file
+        :param json_data: json
         :param dataset: ERA5 dataset which is represented by POSTed .json file
         :return: nothing
         """
@@ -259,8 +259,10 @@ class STACConnector:
             'Authorization': 'Bearer ' + self._stac_token
         }
 
-        data = open(path_to_json)
         response = requests.post(self._stac_base_url + '/collections' + '/' + dataset + '/items',
-                                 headers=headers, data=data)
+                                 headers=headers, data=json_data)
 
-        self._logger.info("Data registered to STAC; registered json=" + path_to_json + ", response=" + str(response))
+        feature_id = json.loads(response.content)
+        # TODO vyzobat feature_id
+
+        self._logger.info("Data registered to STAC; registered json=" + json_data + ", response=" + str(response))

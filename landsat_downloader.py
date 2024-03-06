@@ -3,6 +3,8 @@ import logging
 import datetime
 import os
 import re
+import mimetypes
+import tarfile
 from pathlib import Path
 
 import requests
@@ -151,13 +153,37 @@ class LandsatDownloader:
             downloaded_file['s3_bucket_key']
         )
 
-        Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False)
+        #Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False) # TODO tohle maže lokální soubor už nahraný na S3, tedy to má být správně odkomentované
 
         return downloaded_file
 
-    def __catalogize_file(self, downloaded_file):
+    def __catalogize_file(self, downloaded_file, geojson):
+        from stac_templates.feature import feature
 
-        pass
+        feature['features'][0]['geometry'] = geojson
+        feature['features'][0]['properties']['datetime'] = downloaded_file['start'].isoformat()
+        feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
+        feature['features'][0]['properties']['end_datetime'] = downloaded_file['end'].isoformat()
+
+        feature['features'][0]['links'].append(
+            {
+                'href': 'http://147.251.115.146:8081/'+downloaded_file['s3_bucket_key'],  # TODO
+                'type': mimetypes.guess_type(downloaded_file['filename'])[0],
+                'rel': 'download'
+            }
+        )
+
+        feature['features'][0]['assets'].update(
+            {
+                'title': downloaded_file['displayId'],
+                'entity_id': downloaded_file['entityId'],
+                'product_id': downloaded_file['productId']
+            }
+        )
+
+        feature_json = json.dumps(feature)
+
+        self.stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
 
     def _download_file(self, downloaded_file):
         response = requests.get(downloaded_file['url'], stream=True)
@@ -205,7 +231,7 @@ class LandsatDownloader:
 
         return downloaded_file
 
-    def _download_and_catalogize(self, downloadable_urls):
+    def _download_and_catalogize(self, downloadable_urls, geojson):
         for downloaded_file in downloadable_urls:
 
             while True:
@@ -222,8 +248,11 @@ class LandsatDownloader:
                 # File has already been downloaded, let's continue with next file.
                 continue
 
+            # TODO - napsat rozbalení metadat z taru
+            
+
             downloaded_file = self._save_to_s3(downloaded_file)
-            self.__catalogize_file(downloaded_file)
+            self.__catalogize_file(downloaded_file, geojson)
 
         return True
 
@@ -250,6 +279,6 @@ class LandsatDownloader:
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=label
                     )
 
-                    self._download_and_catalogize(downloadable_urls)
+                    self._download_and_catalogize(downloadable_urls, geojsons[geojson_key])
 
                     self.m2m_api_connector.scene_list_remove(label)
