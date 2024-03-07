@@ -153,7 +153,19 @@ class LandsatDownloader:
             downloaded_file['s3_bucket_key']
         )
 
-        #Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False) # TODO tohle maže lokální soubor už nahraný na S3, tedy to má být správně odkomentované
+        self.s3_connector.upload_file(
+            downloaded_file['metadata_xml_file_path'],
+            downloaded_file['metadata_xml_s3_bucket_key']
+        )
+
+        self.s3_connector.upload_file(
+            downloaded_file['metadata_txt_file_path'],
+            downloaded_file['metadata_txt_s3_bucket_key']
+        )
+
+        Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False)
+        Path(downloaded_file['metadata_xml_file_path']).unlink(missing_ok=False)
+        Path(downloaded_file['metadata_txt_file_path']).unlink(missing_ok=False)
 
         return downloaded_file
 
@@ -165,25 +177,33 @@ class LandsatDownloader:
         feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
         feature['features'][0]['properties']['end_datetime'] = downloaded_file['end'].isoformat()
 
-        feature['features'][0]['links'].append(
-            {
-                'href': 'http://147.251.115.146:8081/'+downloaded_file['s3_bucket_key'],  # TODO
-                'type': mimetypes.guess_type(downloaded_file['filename'])[0],
-                'rel': 'download'
-            }
-        )
-
         feature['features'][0]['assets'].update(
             {
                 'title': downloaded_file['displayId'],
                 'entity_id': downloaded_file['entityId'],
-                'product_id': downloaded_file['productId']
+                'product_id': downloaded_file['productId'],
+                'metadata': {  # TODO odkaz na XMLko metadat
+                    'txt': {
+                        'href': 'http://147.251.115.146:8081/' + downloaded_file['metadata_txt_s3_bucket_key'],  # TODO
+                        'type': mimetypes.guess_type(downloaded_file['metadata_txt_file_path'])[0]
+                    },
+                    'xml': {
+                        'href': 'http://147.251.115.146:8081/' + downloaded_file['metadata_xml_s3_bucket_key'],  # TODO
+                        'type': mimetypes.guess_type(downloaded_file['metadata_xml_file_path'])[0]
+                    }
+                },
+                'data': {
+                    'href': 'http://147.251.115.146:8081/' + downloaded_file['s3_bucket_key'],  # TODO
+                    'type': mimetypes.guess_type(downloaded_file['filename'])[0]
+                }
             }
         )
 
         feature_json = json.dumps(feature)
 
         self.stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
+
+        return downloaded_file
 
     def _download_file(self, downloaded_file):
         response = requests.get(downloaded_file['url'], stream=True)
@@ -249,10 +269,23 @@ class LandsatDownloader:
                 continue
 
             # TODO - napsat rozbalení metadat z taru
-            
+            downloaded_file.update(
+                {
+                    "metadata_xml_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.xml",
+                    "metadata_xml_file_path":str(Path.joinpath(Path(self.workdir),downloaded_file['displayId'] + "_MTL.xml")),
+                    "metadata_txt_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.txt",
+                    "metadata_txt_file_path": str(Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_MTL.txt")),
+            })
 
+            with tarfile.open(name=downloaded_file['downloaded_file_path']) as tar:
+                try:
+                    tar.extract(downloaded_file['displayId']+"_MTL.txt", self.workdir)
+                    tar.extract(downloaded_file['displayId'] + "_MTL.xml", self.workdir)
+                except KeyError:
+                    print(f"Warning: File not found in the tar archive.")
+
+            downloaded_file = self.__catalogize_file(downloaded_file, geojson)
             downloaded_file = self._save_to_s3(downloaded_file)
-            self.__catalogize_file(downloaded_file, geojson)
 
         return True
 
