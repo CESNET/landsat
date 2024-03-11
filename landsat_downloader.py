@@ -163,15 +163,28 @@ class LandsatDownloader:
             downloaded_file['metadata_txt_s3_bucket_key']
         )
 
+        self.s3_connector.upload_file(
+            downloaded_file['feature_id_file_path'],
+            downloaded_file['feature_id_s3_bucket_key']
+        )
+
+        self.s3_connector.upload_file(
+            downloaded_file['feature_json_file_path'],
+            downloaded_file['feature_json_s3_bucket_key']
+        )
+
         Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False)
         Path(downloaded_file['metadata_xml_file_path']).unlink(missing_ok=False)
         Path(downloaded_file['metadata_txt_file_path']).unlink(missing_ok=False)
+        Path(downloaded_file['feature_id_file_path']).unlink(missing_ok=False)
+        Path(downloaded_file['feature_json_file_path']).unlink(missing_ok=False)
 
         return downloaded_file
 
     def __catalogize_file(self, downloaded_file, geojson):
         from stac_templates.feature import feature
 
+        feature['features'][0]['id']=downloaded_file['displayId']
         feature['features'][0]['geometry'] = geojson
         feature['features'][0]['properties']['datetime'] = downloaded_file['start'].isoformat()
         feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
@@ -182,7 +195,7 @@ class LandsatDownloader:
                 'title': downloaded_file['displayId'],
                 'entity_id': downloaded_file['entityId'],
                 'product_id': downloaded_file['productId'],
-                'metadata': {  # TODO odkaz na XMLko metadat
+                'metadata': {
                     'txt': {
                         'href': 'http://147.251.115.146:8081/' + downloaded_file['metadata_txt_s3_bucket_key'],  # TODO
                         'type': mimetypes.guess_type(downloaded_file['metadata_txt_file_path'])[0]
@@ -200,8 +213,24 @@ class LandsatDownloader:
         )
 
         feature_json = json.dumps(feature)
+        feature_json_filepath = Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_feature.json")
+        with open(feature_json_filepath, "w") as feature_json_file:
+            feature_json_file.write(feature_json)
 
-        self.stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
+        feature_id = self.stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
+        feature_id = json.dumps({'feature_id': feature_id})
+        feature_id_filepath = Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_featureId.json")
+        with open(feature_id_filepath, "w") as feature_id_file:
+            feature_id_file.write(feature_id)
+
+        downloaded_file.update(
+            {
+                "feature_id_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_featureId.json",
+                "feature_id_file_path": str(feature_id_filepath),
+                "feature_json_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_feature.json",
+                "feature_json_file_path": str(feature_json_filepath),
+            }
+        )
 
         return downloaded_file
 
@@ -272,14 +301,16 @@ class LandsatDownloader:
             downloaded_file.update(
                 {
                     "metadata_xml_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.xml",
-                    "metadata_xml_file_path":str(Path.joinpath(Path(self.workdir),downloaded_file['displayId'] + "_MTL.xml")),
+                    "metadata_xml_file_path": str(
+                        Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_MTL.xml")),
                     "metadata_txt_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.txt",
-                    "metadata_txt_file_path": str(Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_MTL.txt")),
-            })
+                    "metadata_txt_file_path": str(
+                        Path.joinpath(Path(self.workdir), downloaded_file['displayId'] + "_MTL.txt")),
+                })
 
             with tarfile.open(name=downloaded_file['downloaded_file_path']) as tar:
                 try:
-                    tar.extract(downloaded_file['displayId']+"_MTL.txt", self.workdir)
+                    tar.extract(downloaded_file['displayId'] + "_MTL.txt", self.workdir)
                     tar.extract(downloaded_file['displayId'] + "_MTL.xml", self.workdir)
                 except KeyError:
                     print(f"Warning: File not found in the tar archive.")

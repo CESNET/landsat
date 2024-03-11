@@ -259,10 +259,53 @@ class STACConnector:
             'Authorization': 'Bearer ' + self._stac_token
         }
 
+        """
         response = requests.post(self._stac_base_url + '/collections' + '/' + dataset + '/items',
                                  headers=headers, data=json_data)
+        
+        if feature_id['inError'] > 0:
+            error_code = feature_id['errors'][0]['code']
+            feature_id = feature_id['errors'][0]['error'].split(' ')[1]
+
+            if error_code == 409:
+                self.update_stac_item(json_data, dataset, feature_id)
+            else:
+                # TODO dodělat chybu
+                raise Exception(f"Error {error_code} for featureId {feature_id}.")
+        else:
+            feature_id = feature_id['features'][0]['featureId']
+        """
+
+        feature = json.loads(json_data)['features'][0]
+        response = requests.post(self._stac_base_url + '/collections' + '/' + dataset + '/items',
+                                 headers=headers, data=json.dumps(feature))
 
         feature_id = json.loads(response.content)
-        # TODO vyzobat feature_id
 
-        self._logger.info("Data registered to STAC; registered json=" + json_data + ", response=" + str(response))
+        if 'ErrorCode' in feature_id.keys():
+            if feature_id['ErrorCode'] == 409:
+                feature_id = self.update_stac_item(json_data, dataset, feature_id['ErrorMessage'].split(' ')[1])
+            else:
+                # TODO dodělat chybu
+                raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
+
+        else:
+            feature_id = feature_id['features'][0]['featureId']
+
+        self._logger.info(f"Data registered to STAC; registered json={json_data}, feature_id={feature_id}")
+
+        return feature_id
+
+    def update_stac_item(self, json_data, dataset, feature_id):
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer ' + self._stac_token
+        }
+
+        feature = json.loads(json_data)['features'][0]
+
+        response = requests.put(self._stac_base_url + '/collections' + '/' + dataset + '/items' + '/' + feature_id,
+                                headers=headers, data=json.dumps(feature))
+
+        return feature_id
