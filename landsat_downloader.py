@@ -195,11 +195,18 @@ class LandsatDownloader:
 
         return downloaded_file
 
-    def __catalogize_file(self, downloaded_file, geojson):
+    def get_bbox(self, geojson):
+        from geojson.utils import coords
+        from shapely.geometry import LineString
+
+        return list(LineString(coords(geojson)).bounds)
+
+    def __catalogue_file(self, downloaded_file, geojson):
         from stac_templates.feature import feature
 
         feature['features'][0]['id'] = downloaded_file['displayId']
         feature['features'][0]['geometry'] = geojson
+        feature['features'][0]['bbox'] = self.get_bbox(geojson)
         feature['features'][0]['properties']['datetime'] = downloaded_file['start'].isoformat()
         feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
         feature['features'][0]['properties']['end_datetime'] = downloaded_file['end'].isoformat()
@@ -329,7 +336,7 @@ class LandsatDownloader:
                 except KeyError:
                     print(f"Warning: File not found in the tar archive.")
 
-            downloaded_file = self.__catalogize_file(downloaded_file, geojson)
+            downloaded_file = self.__catalogue_file(downloaded_file, geojson)
             downloaded_file = self._save_to_s3(downloaded_file)
 
         return True

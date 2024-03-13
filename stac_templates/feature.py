@@ -29,12 +29,7 @@ feature = {
             "stac_version": "1.0.0",
             "type": "Feature",
             "id": "",
-            "bbox": [
-                12.09,
-                48.55,
-                18.87,
-                51.06
-            ]
+            "bbox": []  # This needs to be filled
         }
     ]
 }
