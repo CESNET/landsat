@@ -51,7 +51,7 @@ if __name__ == '__main__':
         root_directory=root_dir,
         working_directory=Path(landsat_config.working_directory),
         logger=logger,
-        feature_download_host=landsat_config.feature_download_host
+        feature_download_host=landsat_config.s3_download_host
     )
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 

@@ -18,4 +18,4 @@ log_logger = "LandsatLogger"
 
 working_directory = "workdir"
 
-feature_download_host = "http://147.251.115.146:8081/"
+s3_download_host = "http://147.251.115.146:8081/"

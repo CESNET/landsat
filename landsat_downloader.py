@@ -43,7 +43,7 @@ class LandsatDownloader:
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
             root_directory=None, working_directory=None,
-            logger=logging.getLogger('Downloader'),
+            logger=logging.getLogger('LandsatDownloader'),
             feature_download_host=None
     ):
         logger.info("=== DOWNLOADER INITIALIZING ===")
@@ -141,10 +141,6 @@ class LandsatDownloader:
 
         return downloadable_days
 
-    def _check_if_file_exists(self, downloaded_file, expected_size):
-        # if the file exists, return True
-        return self._s3_connector.check_if_key_exists(downloaded_file['s3_bucket_key'], expected_size)
-
     def _save_to_s3(self, downloaded_file):
         self._s3_connector.upload_file(
             downloaded_file['downloaded_file_path'],
@@ -239,56 +235,11 @@ class LandsatDownloader:
 
         return downloaded_file
 
-    def _download_file(self, downloaded_file):
-        response = requests.get(downloaded_file['url'], stream=True)
-
-        Path(self._workdir).mkdir(exist_ok=True)
-
-        filename = None
-
-        for content_disposition in response.headers['Content-Disposition'].split(' '):
-            if 'filename' in content_disposition:
-                filename = re.findall(r'"([^"]*)"', content_disposition)[0]
-
-        if filename is None:
-            raise LandsatDownloaderUrlDoNotContainsFilename(url=downloaded_file['url'])
-
-        downloaded_file.update(
-            {
-                "filename": filename,
-                "s3_bucket_key": f"{downloaded_file['dataset']}/{filename}"
-            }
-        )
-
-        if self._check_if_file_exists(downloaded_file, response.headers['Content-Length']):
-            # Well the file has already been downloaded, so there is no need to download it again and this
-            # method cannot succeed in downloading the file that has already been downloaded. Let's return False.
-            self._logger.info(f"File {downloaded_file['s3_bucket_key']} has been already downloaded. Skipping.")
-            return False
-
-        downloaded_file_path = os.path.join(self._workdir, filename)
-        Path(downloaded_file_path).touch()
-
-        self._logger.info("Downloading " + downloaded_file['url'] + " into " + downloaded_file_path + ".")
-
-        with open(downloaded_file_path, mode='wb') as result_file:
-            for chunk in response.iter_content(chunk_size=(1024 * 1024)):
-                result_file.write(chunk)
-
-        content_length = int(response.headers['Content-Length'])
-        file_size = os.stat(downloaded_file_path).st_size
-        if content_length != file_size:
-            Path(downloaded_file_path).unlink(missing_ok=False)
-            raise LandsatDownloaderDownloadedFileHasDifferentSize(content_length=content_length, file_size=file_size)
-
-        downloaded_file.update({"downloaded_file_path": downloaded_file_path})
-
-        return downloaded_file
-
     def _download_and_catalogize(self, downloadable_urls, geojson):
         for downloaded_file in downloadable_urls:
             # TODO pro každej soubor udělat vlákno
 
+            """
             while True:
                 try:
                     downloaded_file = self._download_file(downloaded_file)
@@ -302,6 +253,7 @@ class LandsatDownloader:
             if downloaded_file is False:
                 # File has already been downloaded, let's continue with the next file.
                 continue
+            """
 
             # TODO - napsat rozbalení metadat z taru
             downloaded_file.update(
@@ -350,7 +302,15 @@ class LandsatDownloader:
 
                     downloaded_files = []
                     for downloadable_file_attributes in downloadable_files_attributes:
-                        downloaded_files.append(DownloadedFile(downloadable_file_attributes), self._workdir)
+                        downloaded_files.append(
+                            DownloadedFile(
+                                attributes=downloadable_file_attributes,
+                                stac_connector=self._stac_connector,
+                                s3_connector=self._s3_connector,
+                                workdir=self._workdir,
+                                logger=self._logger
+                            )
+                        )
 
                     for downloaded_file in downloaded_files:
                         downloaded_file.process()  # TODO tady udělat threading
