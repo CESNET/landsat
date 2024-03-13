@@ -1,3 +1,5 @@
+import sys
+
 import boto3
 import logging
 
@@ -42,10 +44,17 @@ class S3Connector:
         self.s3_client.upload_file(local_filename, self.bucket, bucket_key)
 
     def download_file(self, path_to_download, bucket_key):
+        path_to_download = str(path_to_download)
         self.logger.info("Downloading key=" + bucket_key + " into file=" + path_to_download + ".")
 
-        with open(path_to_download, 'wb') as downloaded_file:
-            self.s3_client.download_fileobj(self.bucket, bucket_key, downloaded_file)
+        try:
+            with open(path_to_download, 'wb') as downloaded_file:
+                self.s3_client.download_fileobj(self.bucket, bucket_key, downloaded_file)
+
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                self.logger.error(e)
+                exit(-1)
 
     def delete_key(self, key):
         self.logger.info("Deleting key=" + key + ".")
@@ -77,7 +86,7 @@ class S3Connector:
         try:
             key_head = self.s3_client.head_object(Bucket=self.bucket, Key=key)
         except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code']=="404":
+            if e.response['Error']['Code'] == "404":
                 # File/key does not exist
                 return False
             else:
@@ -94,7 +103,6 @@ class S3Connector:
             self.delete_key(key)
             return False
 
-        
         """if not self.keys_up_to_date:
             self._update_keys()
 

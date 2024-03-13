@@ -44,8 +44,11 @@ if __name__ == '__main__':
     setup_logging(root_dir)
     logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    downloader = LandsatDownloader(root_directory=root_dir, working_directory=landsat_config.working_directory,
-                                   logger=logger)
+    downloader = LandsatDownloader(
+        root_directory=root_dir,
+        working_directory=landsat_config.working_directory,
+        logger=logger
+    )
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
     while True:

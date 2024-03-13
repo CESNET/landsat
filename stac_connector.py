@@ -292,7 +292,7 @@ class STACConnector:
         else:
             feature_id = feature_id['features'][0]['featureId']
 
-        self._logger.info(f"Data registered to STAC; registered json={json_data}, feature_id={feature_id}")
+        self._logger.info(f"Data registered to STAC, feature_id={feature_id}")
 
         return feature_id
 

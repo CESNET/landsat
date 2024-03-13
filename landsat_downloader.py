@@ -9,8 +9,6 @@ from pathlib import Path
 
 import requests
 
-import config.m2m_config as m2m_config
-
 from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
 from s3_connector import S3Connector
@@ -42,16 +40,13 @@ class LandsatDownloaderDownloadedFileHasDifferentSize(Exception):
 
 
 class LandsatDownloader:
-    """
-    __demanded_datasets = [
+    _last_downloaded_day_filename = 'last_downloaded_day.json'
+
+    _demanded_datasets = [
         "landsat_ot_c2_l1", "landsat_ot_c2_l2",
         "landsat_etm_c2_l1", "landsat_etm_c2_l2",
         "landsat_tm_c2_l1", "landsat_tm_c2_l2",
         "landsat_mss_c2_l1"
-    ]
-    """
-    _demanded_datasets = [
-        "landsat_ot_c2_l1"
     ]
 
     _dataset_fullname = {
@@ -80,7 +75,7 @@ class LandsatDownloader:
             raise Exception("working_directory must be specified")
 
         self.root_directory = root_directory
-        self.workdir = str(os.path.join(self.root_directory, working_directory))
+        self.workdir = str(Path(self.root_directory).joinpath(working_directory))
         self.logger = logger
 
         self._clean_up()
@@ -106,20 +101,39 @@ class LandsatDownloader:
         rmtree(pycache_dir, ignore_errors=True)
 
         self.logger.info("Initial cleanup: Deleting " + self.workdir)
-        # rmtree(self.workdir, ignore_errors=True) # TODO workdir se má mazat, ale teď tam mám dočasně poslední aktualizaci
+        rmtree(self.workdir, ignore_errors=True)
 
         self.logger.info("Initial cleanup: Creating directory " + self.workdir)
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
 
-    def _get_last_downloaded_day(self):  # TODO rewrite for S3 storage
-        last_downloaded_day_file = open('workdir/last_downloaded_day.json')
-        last_downloaded_day = datetime.datetime.strptime(
-            json.load(last_downloaded_day_file)['last_downloaded_day'],
-            "%Y-%m-%d"
-        ).date()
-        last_downloaded_day_file.close()
+    def _get_last_downloaded_day(self):
+        download_to = Path(self.workdir).joinpath(self._last_downloaded_day_filename)
+
+        self.s3_connector.download_file(
+            download_to, self._last_downloaded_day_filename
+        )
+
+        with open(download_to) as last_downloaded_day_file:
+            last_downloaded_day = datetime.datetime.strptime(
+                json.load(last_downloaded_day_file)['last_downloaded_day'],
+                "%Y-%m-%d"
+            ).date()
+
+        download_to.unlink(missing_ok=False)
 
         return last_downloaded_day
+
+    def _update_last_downloaded_day(self, day):
+        last_downloaded_day_dict = {"last_downloaded_day": day.strftime("%Y-%m-%d")}
+        local_file = Path(self.workdir).joinpath(self._last_downloaded_day_filename)
+        local_file.touch(exist_ok=True)
+
+        with open(local_file, "w") as last_downloaded_day_file:
+            json.dump(last_downloaded_day_dict, last_downloaded_day_file)
+
+        self.s3_connector.upload_file(str(local_file), self._last_downloaded_day_filename)
+
+        local_file.unlink(missing_ok=False)
 
     def _create_array_of_downloadable_days(self, date_from, date_to):
         downloadable_days = []
@@ -184,7 +198,7 @@ class LandsatDownloader:
     def __catalogize_file(self, downloaded_file, geojson):
         from stac_templates.feature import feature
 
-        feature['features'][0]['id']=downloaded_file['displayId']
+        feature['features'][0]['id'] = downloaded_file['displayId']
         feature['features'][0]['geometry'] = geojson
         feature['features'][0]['properties']['datetime'] = downloaded_file['start'].isoformat()
         feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
@@ -346,3 +360,5 @@ class LandsatDownloader:
                     self._download_and_catalogize(downloadable_urls, geojsons[geojson_key])
 
                     self.m2m_api_connector.scene_list_remove(label)
+
+            self._update_last_downloaded_day(day)
