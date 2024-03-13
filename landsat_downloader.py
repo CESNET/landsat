@@ -13,6 +13,8 @@ from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
 from s3_connector import S3Connector
 
+from downloaded_file import DownloadedFile
+
 from exceptions.landsat_downloader import *
 
 
@@ -342,11 +344,18 @@ class LandsatDownloader:
                     )
 
                     scene_label = "landsat_downloader_"
-                    downloadable_urls = self._m2m_api_connector.get_downloadable_urls(
+                    downloadable_files_attributes = self._m2m_api_connector.get_downloadable_files(
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=scene_label
                     )
 
-                    self._download_and_catalogize(downloadable_urls, geojsons[geojson_key])
+                    downloaded_files = []
+                    for downloadable_file_attributes in downloadable_files_attributes:
+                        downloaded_files.append(DownloadedFile(downloadable_file_attributes), self._workdir)
+
+                    for downloaded_file in downloaded_files:
+                        downloaded_file.process()  # TODO tady udělat threading
+
+                    # self._download_and_catalogize(downloadable_files, geojsons[geojson_key])
 
                     self._m2m_api_connector.scene_list_remove(scene_label)
 

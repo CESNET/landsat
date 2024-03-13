@@ -6,9 +6,8 @@ import random
 import time
 import requests
 
-import downloaded_file
-
 import config.m2m_config as m2m_config
+
 from exceptions.m2m_api_connector import *
 
 
@@ -39,7 +38,7 @@ class M2MAPIConnector:
             "token": self._token
         }
 
-        response = self.__send_request('login-token', api_payload)
+        response = self._send_request('login-token', api_payload)
         response_content = json.loads(response)
 
         self._api_token = response_content['data']
@@ -47,7 +46,7 @@ class M2MAPIConnector:
         if self._api_token is None:
             raise M2MAPITokenNotObtainedError()
 
-    def scene_search(self, dataset, geojson, day_start, day_end):
+    def _scene_search(self, dataset, geojson, day_start, day_end):
         api_payload = {
             "maxResults": 10000,
             "datasetName": dataset,
@@ -63,12 +62,12 @@ class M2MAPIConnector:
             }
         }
 
-        response = self.__send_request('scene-search', api_payload)
+        response = self._send_request('scene-search', api_payload)
         scenes = json.loads(response)
 
         return scenes['data']
 
-    def __scene_list_add(self, label, datasetName, entity_ids):
+    def _scene_list_add(self, label, datasetName, entity_ids):
         api_payload = {
             "listId": label,
             "datasetName": datasetName,
@@ -76,34 +75,34 @@ class M2MAPIConnector:
             "entityIds": entity_ids
         }
 
-        self.__send_request('scene-list-add', api_payload)
+        self._send_request('scene-list-add', api_payload)
 
     def scene_list_remove(self, label):
         api_payload = {
             "listId": label
         }
 
-        self.__send_request('scene-list-remove', api_payload)
+        self._send_request('scene-list-remove', api_payload)
 
-    def __download_options(self, label, dataset):
+    def _download_options(self, label, dataset):
         api_payload = {
             "listId": label,
             "datasetName": dataset,
             "includeSecondaryFileGroups": "true"
         }
 
-        response = self.__send_request('download-options', api_payload)
+        response = self._send_request('download-options', api_payload)
         download_options = json.loads(response)
 
         filtered_download_options = [do for do in download_options['data'] if do['downloadSystem'] == 'dds']
 
         return filtered_download_options
 
-    def __unique_urls(self, available_urls):
+    def _unique_urls(self, available_urls):
         unique_urls = list({url_dict['url']: url_dict for url_dict in available_urls}.values())
         return unique_urls
 
-    def __download_request(self, download_options):
+    def _download_request(self, download_options):
         available_urls = []
 
         while True:
@@ -119,7 +118,7 @@ class M2MAPIConnector:
                     ]
                 }
 
-                response = self.__send_request('download-request', api_payload)
+                response = self._send_request('download-request', api_payload)
                 download_request = json.loads(response)
 
                 for available_download in download_request['data']['availableDownloads']:
@@ -145,7 +144,7 @@ class M2MAPIConnector:
 
             time.sleep(5)
 
-        available_urls = self.__unique_urls(available_urls)
+        available_urls = self._unique_urls(available_urls)
 
         if len(available_urls) < len(download_options):
             raise M2MAPIDownloadRequestReturnedFewerURLs(
@@ -154,8 +153,8 @@ class M2MAPIConnector:
 
         return available_urls
 
-    def __get_list_of_urls(self, download_options, entity_display_ids, time_start, time_end, dataset):
-        downloadable_urls = self.__download_request(download_options)
+    def _get_list_of_files(self, download_options, entity_display_ids, time_start, time_end, dataset):
+        downloadable_urls = self._download_request(download_options)
 
         for downloadable_url in downloadable_urls:
             downloadable_url.update(
@@ -169,31 +168,33 @@ class M2MAPIConnector:
 
         return downloadable_urls
 
-    def get_downloadable_urls(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
+    def get_downloadable_files(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
         self.scene_list_remove(label)
 
-        scenes = self.scene_search(dataset, geojson, time_start, time_end)
+        scenes = self._scene_search(dataset, geojson, time_start, time_end)
 
         entity_display_ids = {result['entityId']: result['displayId'] for result in scenes['results']}
 
         self._logger.info(
-            "Total hits: {}, records returned: {}, returned IDs: {}".format(
-                scenes['totalHits'], scenes['recordsReturned'], entity_display_ids
-            )
+            f"Total hits: {scenes['totalHits']}, records returned: {scenes['recordsReturned']}, " +
+            f"returned IDs: {entity_display_ids}"
         )
 
         if not entity_display_ids:
             return []
 
-        self.__scene_list_add(label, dataset, list(entity_display_ids.keys()))
+        self._scene_list_add(label, dataset, list(entity_display_ids.keys()))
 
-        download_options = self.__download_options(label, dataset)
+        download_options = self._download_options(label, dataset)
 
-        downloadable_urls = self.__get_list_of_urls(download_options, entity_display_ids, time_start, time_end, dataset)
+        downloadable_files = self._get_list_of_files(download_options, entity_display_ids, time_start, time_end,
+                                                     dataset)
+        for downloadable_file in downloadable_files:
+            downloadable_file.update({'geojson': geojson})
 
-        return downloadable_urls
+        return downloadable_files
 
-    def __send_request(self, endpoint, payload_dict=None, max_retries=5):
+    def _send_request(self, endpoint, payload_dict=None, max_retries=5):
         if payload_dict is None:
             payload_dict = {}
 
@@ -208,14 +209,14 @@ class M2MAPIConnector:
 
             headers['X-Auth-Token'] = self._api_token
 
-        data = self.__retry_request(endpoint_full_url, payload_json, max_retries, headers)
+        data = self._retry_request(endpoint_full_url, payload_json, max_retries, headers)
 
         if data.status_code != 200:
             raise M2MAPIRequestNotOK(status_code=data.status_code)
 
         return data.content
 
-    def __retry_request(self, endpoint, payload, max_retries, headers=None, timeout=10, sleep=5):
+    def _retry_request(self, endpoint, payload, max_retries, headers=None, timeout=10, sleep=5):
         if headers is None:
             headers = {}
 

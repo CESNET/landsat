@@ -12,6 +12,9 @@ import config.landsat_config as landsat_config
 
 from landsat_downloader import LandsatDownloader
 
+from exceptions.m2m_api_connector import *
+from exceptions.stac_connector import *
+
 
 def setup_logging(current_path):
     log_dir = os.path.join(current_path, landsat_config.log_directory)
@@ -62,13 +65,29 @@ if __name__ == '__main__':
         exception_occurred = False
         try:
             landsat_downloader.run()
-        except Exception as exception:
-            exception_occurred = True
-            logger.critical(exception, exc_info=True)
 
-        if exception_occurred:
-            time.sleep(60 * 60)
+        except M2MAPIRequestTimeout as e:
+            logger.critical(e, exc_info=True)
+
+            sleep_for = 60 * 60
+            logger.critical(f"Program will wait for {sleep_for} seconds.")
+            time.sleep(sleep_for)
+
             continue
+
+        except STACRequestTimeout as e:
+            logger.critical(e, exc_info=True)
+
+            sleep_for = 60 * 60
+            logger.critical(f"Program will wait for {sleep_for} seconds.")
+            time.sleep(sleep_for)
+
+            continue
+
+        except Exception as e:
+            exception_occurred = True
+            logger.critical(e, exc_info=True)
+            exit(-1)
 
         while datetime.datetime.utcnow() < next_run_at:
             sleep_for = int((next_run_at - datetime.datetime.utcnow()).total_seconds())
