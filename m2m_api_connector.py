@@ -6,69 +6,10 @@ import random
 import time
 import requests
 
+import downloaded_file
+
 import config.m2m_config as m2m_config
-
-
-class M2MAPIConnectorError(Exception):
-    def __init__(self, message="M2M API Connector General Error!"):
-        self.message = message
-        super().__init__(self.message)
-
-
-class M2MAPITokenNotObtainedError(M2MAPIConnectorError):
-    def __init__(self, message="M2M API Token not obtained!"):
-        self.message = message
-        super().__init__(self.message)
-
-
-class M2MAPICredentialsNotProvided(M2MAPIConnectorError):
-    def __init__(self, message="M2M API Credentials were not provided!"):
-        self.message = message
-        super().__init__(self.message)
-
-
-class M2MAPIRequestTimeout(M2MAPIConnectorError):
-    def __init__(self, message="M2M API Request Timeouted.", retry=None, max_retries=None):
-        if retry is not None:
-            self.message = "M2M API Request Timeouted after {} retries.".format(retry)
-
-            if max_retries is not None:
-                self.message = self.message + " Max retries: {}.".format(max_retries)
-        else:
-            self.message = message
-
-        super().__init__(self.message)
-
-
-class M2MAPIRequestNotOK(M2MAPIConnectorError):
-    def __init__(self, message="M2M API Request status code not 200/OK!", status_code=None):
-        if status_code is not None:
-            self.message = "M2M API Request status code is {}!".format(status_code)
-        else:
-            self.message = message
-
-        super().__init__(self.message)
-
-
-class M2MAPIDownloadRequestReturnedFewerURLs(M2MAPIConnectorError):
-    def __init__(
-            self,
-            message="M2M API download-request endpoint returned fewer URLs! entityIds count: {}, URLs count: {}.",
-            entity_ids_count=None, urls_count=None
-    ):
-        if entity_ids_count and urls_count:
-            self.message = message.format(entity_ids_count, urls_count)
-        else:
-            self.message = message
-
-
-class M2MAPIDownloadableUrlsNotObtained(M2MAPIConnectorError):
-    def __init__(self, message="Downloadable URLs not obtained!", downloadable_urls=None):
-        self.message = message
-        for url in downloadable_urls:
-            self.message = self.message + '\n' + str(url)
-
-        super().__init__(self.message)
+from exceptions.m2m_api_connector import *
 
 
 class M2MAPIConnector:
@@ -79,31 +20,31 @@ class M2MAPIConnector:
             token=m2m_config.token,
             api_url=m2m_config.api_url
     ):
-        self.api_url = api_url
-        self.logger = logger
-        self.__login_token(username, token)
+        self._api_url = api_url
+        self._logger = logger
+        self._login_token(username, token)
 
-    def __login_token(self, username=None, token=None):
+    def _login_token(self, username=None, token=None):
         if (username is None) or (token is None):
             raise M2MAPICredentialsNotProvided()
 
-        self.username = username
-        self.token = token
+        self._username = username
+        self._token = token
 
-        self.api_token = None
-        self.api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+        self._api_token = None
+        self._api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
 
         api_payload = {
-            "username": self.username,
-            "token": self.token
+            "username": self._username,
+            "token": self._token
         }
 
         response = self.__send_request('login-token', api_payload)
         response_content = json.loads(response)
 
-        self.api_token = response_content['data']
+        self._api_token = response_content['data']
 
-        if self.api_token is None:
+        if self._api_token is None:
             raise M2MAPITokenNotObtainedError()
 
     def scene_search(self, dataset, geojson, day_start, day_end):
@@ -235,7 +176,7 @@ class M2MAPIConnector:
 
         entity_display_ids = {result['entityId']: result['displayId'] for result in scenes['results']}
 
-        self.logger.info(
+        self._logger.info(
             "Total hits: {}, records returned: {}, returned IDs: {}".format(
                 scenes['totalHits'], scenes['recordsReturned'], entity_display_ids
             )
@@ -256,16 +197,16 @@ class M2MAPIConnector:
         if payload_dict is None:
             payload_dict = {}
 
-        endpoint_full_url = str(os.path.join(self.api_url, endpoint))
+        endpoint_full_url = str(os.path.join(self._api_url, endpoint))
         payload_json = json.dumps(payload_dict)
 
         headers = {}
 
         if (endpoint != 'login') and (endpoint != 'login-token'):
-            if self.api_token_valid_until < datetime.datetime.utcnow():
-                self.__login_token(self.username, self.token)
+            if self._api_token_valid_until < datetime.datetime.utcnow():
+                self._login_token(self._username, self._token)
 
-            headers['X-Auth-Token'] = self.api_token
+            headers['X-Auth-Token'] = self._api_token
 
         data = self.__retry_request(endpoint_full_url, payload_json, max_retries, headers)
 
@@ -280,13 +221,13 @@ class M2MAPIConnector:
 
         retry = 0
         while max_retries > retry:
-            self.logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
+            self._logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
             try:
                 response = requests.post(endpoint, payload, headers=headers, timeout=timeout)
                 return response
 
             except requests.exceptions.Timeout:
-                self.logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+                self._logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
 
                 retry += 1
                 sleep = (1 + random.random()) * sleep

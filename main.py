@@ -39,15 +39,16 @@ def setup_logging(current_path):
 
 if __name__ == '__main__':
     logger = logging.getLogger(landsat_config.log_logger)
-    root_dir = str(Path(__file__).parent.resolve())
+    root_dir = Path(__file__).parent.resolve()
 
     setup_logging(root_dir)
     logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    downloader = LandsatDownloader(
+    landsat_downloader = LandsatDownloader(
         root_directory=root_dir,
-        working_directory=landsat_config.working_directory,
-        logger=logger
+        working_directory=Path(landsat_config.working_directory),
+        logger=logger,
+        feature_download_host=landsat_config.feature_download_host
     )
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
@@ -60,7 +61,7 @@ if __name__ == '__main__':
 
         exception_occurred = False
         try:
-            downloader.run()
+            landsat_downloader.run()
         except Exception as exception:
             exception_occurred = True
             logger.critical(exception, exc_info=True)
