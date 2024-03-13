@@ -315,7 +315,7 @@ class LandsatDownloader:
                     continue
 
             if downloaded_file is False:
-                # File has already been downloaded, let's continue with next file.
+                # File has already been downloaded, let's continue with the next file.
                 continue
 
             # TODO - napsat rozbalení metadat z taru
