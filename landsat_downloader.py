@@ -101,9 +101,11 @@ class LandsatDownloader:
         :return: nothing
         """
 
+        """
         pycache_dir = self._root_directory.joinpath("__pycache__")
         self._logger.info(f"Initial cleanup: Deleting {pycache_dir}")
         pycache_dir.unlink(missing_ok=True)
+        """
 
         import shutil
         self._logger.info(f"Initial cleanup: Deleting {self._workdir}")

@@ -218,7 +218,7 @@ class DownloadedFile:
         filename = self._display_id + "_feature.json"
         self._feature_json_file = self._workdir.joinpath(filename)
 
-        self._s3_connector.download_file(self._feature_json_file, filename)
+        self._s3_connector.download_file(self._feature_json_file, self._get_s3_bucket_key_of_attribute(filename))
 
     def _dump_stac_feature_into_json(self, feature_dict=None):
         if feature_dict is not None:
@@ -246,34 +246,16 @@ class DownloadedFile:
                 'product_id': self._product_id,
                 'metadata': {
                     'txt': {
-                        'href': str(
-                            Path(self._download_host).joinpath(
-                                self._get_s3_bucket_key_of_attribute(
-                                    self._metadata_txt_file
-                                )
-                            )
-                        ),
+                        'href': f"{self._download_host}{self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)}",
                         'type': mimetypes.guess_type(self._metadata_txt_file)[0]
                     },
                     'xml': {
-                        'href': str(
-                            Path(self._download_host).joinpath(
-                                self._get_s3_bucket_key_of_attribute(
-                                    self._metadata_xml_file
-                                )
-                            )
-                        ),
+                        'href': f"{self._download_host}{self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)}",
                         'type': mimetypes.guess_type(self._metadata_xml_file)[0]
                     }
                 },
                 'data': {
-                    'href': str(
-                        Path(self._download_host).joinpath(
-                            self._get_s3_bucket_key_of_attribute(
-                                self._data_file
-                            )
-                        )
-                    ),
+                    'href': f"{self._download_host}{self._get_s3_bucket_key_of_attribute(self._data_file)}",
                     'type': mimetypes.guess_type(self._data_file)[0]
                 }
             }

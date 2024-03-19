@@ -129,7 +129,7 @@ class STACConnector:
         response = requests.post(
             url=self._stac_base_url + '/collections' + '/' + collection + '/items',
             headers=headers,
-            data=json_dict
+            data=json.dumps(json_dict)
         )
 
         feature_id = json.loads(response.content)
