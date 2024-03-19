@@ -1,3 +1,4 @@
+import json
 import logging
 import mimetypes
 import os
@@ -20,6 +21,15 @@ class DownloadedFile:
     _stac_connector: STACConnector
     _s3_connector: S3Connector
     _workdir: Path
+
+    _data_file = None
+    _metadata_txt_file = None
+    _metadata_xml_file = None
+    _feature_json_file = None
+    _feature_id_json_file = None
+
+    _feature_dict = None
+    _feature_id = None
 
     def __init__(
             self,
@@ -59,11 +69,27 @@ class DownloadedFile:
         self._download_host = s3_download_host
 
     def __del__(self):
-        self._data_file.unlink(missing_ok=True)
-        self._metadata_txt_file.unlink(missing_ok=True)
-        self._metadata_xml_file.unlink(missing_ok=True)
+        if self._data_file is not None:
+            self._data_file.unlink(missing_ok=True)
+
+        if self._metadata_txt_file is not None:
+            self._metadata_txt_file.unlink(missing_ok=True)
+
+        if self._metadata_xml_file is not None:
+            self._metadata_xml_file.unlink(missing_ok=True)
+
+        if self._feature_json_file is not None:
+            self._feature_json_file.unlink(missing_ok=True)
+
+        if self._feature_id_json_file is not None:
+            self._feature_id_json_file.unlink(missing_ok=True)
 
     def _get_s3_bucket_key_of_attribute(self, attribute):
+        attribute = (
+            str(attribute).  # Attribute
+            replace(str(self._workdir), "").  # Remove full workdir path, leave only filename
+            replace("\\", "").replace("/", "")  # Also remove any unwanted slashes
+        )
         return f"{self._dataset}/{attribute}"
 
     def process(self):
@@ -83,9 +109,38 @@ class DownloadedFile:
 
         if file_downloaded:
             self._untar_metadata()
+
+            # Uploading data file and metadata to S3
+            self._s3_connector.upload_file(
+                local_file=self._data_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._data_file)
+            )
+            self._s3_connector.upload_file(
+                local_file=self._metadata_txt_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
+            )
+            self._s3_connector.upload_file(
+                local_file=self._metadata_xml_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
+            )
+
+            # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
             self._prepare_stac_feature_structure()
+            self._s3_connector.upload_file(
+                local_file=self._feature_json_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_json_file)
+            )
+            self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
+            self._save_feature_id()
+
         else:
-            pass
+            # File is already downloaded in S3, just regenerate feature JSON and re-register it
+            self._download_existing_feature_json()
+            self._update_json_feature()
+            self._s3_connector.upload_file(
+                local_file=self._feature_json_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_json_file)
+            )
 
     def _check_if_already_downloaded(self, expected_length):
         """
@@ -159,6 +214,21 @@ class DownloadedFile:
         self._metadata_txt_file = Path(self._workdir).joinpath(metadata_txt)
         self._metadata_xml_file = Path(self._workdir).joinpath(metadata_xml)
 
+    def _download_existing_feature_json(self):
+        filename = self._display_id + "_feature.json"
+        self._feature_json_file = self._workdir.joinpath(filename)
+
+        self._s3_connector.download_file(self._feature_json_file, filename)
+
+    def _dump_stac_feature_into_json(self, feature_dict=None):
+        if feature_dict is not None:
+            self._feature_dict = feature_dict
+
+        self._feature_json_file = self._workdir.joinpath(self._display_id + "_feature.json")
+
+        with open(self._feature_json_file, "w") as feature_json_file:
+            feature_json_file.write(json.dumps(self._feature_dict))
+
     def _prepare_stac_feature_structure(self):
         from stac_templates.feature import feature
 
@@ -176,43 +246,61 @@ class DownloadedFile:
                 'product_id': self._product_id,
                 'metadata': {
                     'txt': {
-                        'href': 'http://147.251.115.146:8081/' + self._get_s3_bucket_key_of_attribute(
-                            self._metadata_txt_file),
+                        'href': str(
+                            Path(self._download_host).joinpath(
+                                self._get_s3_bucket_key_of_attribute(
+                                    self._metadata_txt_file
+                                )
+                            )
+                        ),
                         'type': mimetypes.guess_type(self._metadata_txt_file)[0]
                     },
                     'xml': {
-                        'href': 'http://147.251.115.146:8081/' + self._get_s3_bucket_key_of_attribute(
-                            self._metadata_xml_file),
+                        'href': str(
+                            Path(self._download_host).joinpath(
+                                self._get_s3_bucket_key_of_attribute(
+                                    self._metadata_xml_file
+                                )
+                            )
+                        ),
                         'type': mimetypes.guess_type(self._metadata_xml_file)[0]
                     }
                 },
                 'data': {
-                    'href': 'http://147.251.115.146:8081/' + self._get_s3_bucket_key_of_attribute(self._data_file),
+                    'href': str(
+                        Path(self._download_host).joinpath(
+                            self._get_s3_bucket_key_of_attribute(
+                                self._data_file
+                            )
+                        )
+                    ),
                     'type': mimetypes.guess_type(self._data_file)[0]
                 }
             }
         )
 
         self._feature_dict = feature
-        
-        ## TODO POKRAČOVAT ODTUD
+        self._dump_stac_feature_into_json()
 
-        feature_json = json.dumps(feature)
-        feature_json_filepath = Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_feature.json")
-        with open(feature_json_filepath, "w") as feature_json_file:
-            feature_json_file.write(feature_json)
+    def _update_json_feature(self):
+        with open(self._feature_json_file, "r") as feature_json_file:
+            self._feature_dict = json.load(feature_json_file)
 
-        feature_id = self._stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
-        feature_id = json.dumps({'feature_id': feature_id})
-        feature_id_filepath = Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_featureId.json")
-        with open(feature_id_filepath, "w") as feature_id_file:
-            feature_id_file.write(feature_id)
+        # TODO
+        self._feature_dict['features'][0]['assets']['metadata']['txt']['href']
+        self._feature_dict['features'][0]['assets']['metadata']['xml']['href']
+        self._feature_dict['features'][0]['assets']['data']['href']
 
-        downloaded_file.update(
-            {
-                "feature_id_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_featureId.json",
-                "feature_id_file_path": str(feature_id_filepath),
-                "feature_json_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_feature.json",
-                "feature_json_file_path": str(feature_json_filepath),
-            }
+        self._dump_stac_feature_into_json()
+
+    def _save_feature_id(self):
+        feature_id_json_dict = {'featureId': self._feature_id}
+
+        self._feature_id_json_file = self._workdir.joinpath(self._display_id + "_featureId.json")
+        with open(self._feature_id_json_file, "w") as feature_id_json_file:
+            feature_id_json_file.write(json.dumps(feature_id_json_dict))
+
+        self._s3_connector.upload_file(
+            local_file=self._feature_id_json_file,
+            bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_id_json_file)
         )

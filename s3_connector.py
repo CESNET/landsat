@@ -6,10 +6,9 @@ import botocore.exceptions
 import config.s3_config as s3_config
 
 """
-Create file ./downloader/config/s3_config.py with following content:
+Create file ./config/s3_config.py with following content:
 
 host_base = "https://s3.cl4.du.cesnet.cz"
-use_https = True
 access_key = "your_access_key_should_go_here"
 secret_key = "your_secret_key_should_go_here"
 host_bucket = "landsat"

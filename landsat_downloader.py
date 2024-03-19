@@ -1,13 +1,7 @@
 import json
 import logging
 import datetime
-import os
-import re
-import mimetypes
-import tarfile
 from pathlib import Path
-
-import requests
 
 from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
@@ -15,7 +9,18 @@ from s3_connector import S3Connector
 
 from downloaded_file import DownloadedFile
 
-from exceptions.landsat_downloader import *
+"""
+Create file ./config/landsat_config.py with following content:
+
+log_directory = "log"
+log_name = "landsat.log"
+log_level = 20
+log_logger = "LandsatLogger"
+working_directory = "workdir"
+s3_download_host = "host with s3 download relay"
+
+...or your values could be different. As you wish.
+"""
 
 
 class LandsatDownloader:
@@ -42,6 +47,7 @@ class LandsatDownloader:
             self,
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
+            s3_endpoint=None, s3_access_key=None, s3_secret_key=None, s3_host_bucket=None,
             root_directory=None, working_directory=None,
             logger=logging.getLogger('LandsatDownloader'),
             feature_download_host=None
@@ -64,9 +70,26 @@ class LandsatDownloader:
 
         self._clean_up()
 
-        self._m2m_api_connector = M2MAPIConnector(logger=self._logger)
-        self._stac_connector = STACConnector(logger=logger)
-        self._s3_connector = S3Connector(logger=logger)
+        if (m2m_username is None) or (m2m_token is None):
+            self._m2m_api_connector = M2MAPIConnector(logger=self._logger)
+        else:
+            self._m2m_api_connector = M2MAPIConnector(username=m2m_username, token=m2m_token, logger=self._logger)
+
+        if (stac_username is None) or (stac_password is None):
+            self._stac_connector = STACConnector(logger=logger)
+        else:
+            self._stac_connector = STACConnector(username=stac_username, password=stac_password, logger=logger)
+
+        if (s3_endpoint is None) or (s3_access_key is None) or (s3_secret_key is None) or (s3_host_bucket is None):
+            self._s3_connector = S3Connector(logger=logger)
+        else:
+            self._s3_connector = S3Connector(
+                s3_endpoint=s3_endpoint,
+                access_key=s3_access_key,
+                secret_key=s3_secret_key,
+                host_bucket=s3_host_bucket,
+                logger=logger
+            )
 
         self._logger.info('=== DOWNLOADER INITIALIZED ===')
 
@@ -141,143 +164,6 @@ class LandsatDownloader:
 
         return downloadable_days
 
-    def _save_to_s3(self, downloaded_file):
-        self._s3_connector.upload_file(
-            downloaded_file['downloaded_file_path'],
-            downloaded_file['s3_bucket_key']
-        )
-
-        self._s3_connector.upload_file(
-            downloaded_file['metadata_xml_file_path'],
-            downloaded_file['metadata_xml_s3_bucket_key']
-        )
-
-        self._s3_connector.upload_file(
-            downloaded_file['metadata_txt_file_path'],
-            downloaded_file['metadata_txt_s3_bucket_key']
-        )
-
-        self._s3_connector.upload_file(
-            downloaded_file['feature_id_file_path'],
-            downloaded_file['feature_id_s3_bucket_key']
-        )
-
-        self._s3_connector.upload_file(
-            downloaded_file['feature_json_file_path'],
-            downloaded_file['feature_json_s3_bucket_key']
-        )
-
-        Path(downloaded_file['downloaded_file_path']).unlink(missing_ok=False)
-        Path(downloaded_file['metadata_xml_file_path']).unlink(missing_ok=False)
-        Path(downloaded_file['metadata_txt_file_path']).unlink(missing_ok=False)
-        Path(downloaded_file['feature_id_file_path']).unlink(missing_ok=False)
-        Path(downloaded_file['feature_json_file_path']).unlink(missing_ok=False)
-
-        return downloaded_file
-
-    def get_bbox(self, geojson):
-        from geojson.utils import coords
-        from shapely.geometry import LineString
-
-        return list(LineString(coords(geojson)).bounds)
-
-    def __catalogue_file(self, downloaded_file, geojson):
-        from stac_templates.feature import feature
-
-        feature['features'][0]['id'] = downloaded_file['displayId']
-        feature['features'][0]['geometry'] = geojson
-        feature['features'][0]['bbox'] = self.get_bbox(geojson)
-        feature['features'][0]['properties']['datetime'] = downloaded_file['start'].isoformat()
-        feature['features'][0]['properties']['start_datetime'] = downloaded_file['start'].isoformat()
-        feature['features'][0]['properties']['end_datetime'] = downloaded_file['end'].isoformat()
-
-        feature['features'][0]['assets'].update(
-            {
-                'title': downloaded_file['displayId'],
-                'entity_id': downloaded_file['entityId'],
-                'product_id': downloaded_file['productId'],
-                'metadata': {
-                    'txt': {
-                        'href': 'http://147.251.115.146:8081/' + downloaded_file['metadata_txt_s3_bucket_key'],  # TODO
-                        'type': mimetypes.guess_type(downloaded_file['metadata_txt_file_path'])[0]
-                    },
-                    'xml': {
-                        'href': 'http://147.251.115.146:8081/' + downloaded_file['metadata_xml_s3_bucket_key'],  # TODO
-                        'type': mimetypes.guess_type(downloaded_file['metadata_xml_file_path'])[0]
-                    }
-                },
-                'data': {
-                    'href': 'http://147.251.115.146:8081/' + downloaded_file['s3_bucket_key'],  # TODO
-                    'type': mimetypes.guess_type(downloaded_file['filename'])[0]
-                }
-            }
-        )
-
-        feature_json = json.dumps(feature)
-        feature_json_filepath = Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_feature.json")
-        with open(feature_json_filepath, "w") as feature_json_file:
-            feature_json_file.write(feature_json)
-
-        feature_id = self._stac_connector.register_stac_item(feature_json, downloaded_file['dataset'])
-        feature_id = json.dumps({'feature_id': feature_id})
-        feature_id_filepath = Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_featureId.json")
-        with open(feature_id_filepath, "w") as feature_id_file:
-            feature_id_file.write(feature_id)
-
-        downloaded_file.update(
-            {
-                "feature_id_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_featureId.json",
-                "feature_id_file_path": str(feature_id_filepath),
-                "feature_json_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_feature.json",
-                "feature_json_file_path": str(feature_json_filepath),
-            }
-        )
-
-        return downloaded_file
-
-    def _download_and_catalogize(self, downloadable_urls, geojson):
-        for downloaded_file in downloadable_urls:
-            # TODO pro každej soubor udělat vlákno
-
-            """
-            while True:
-                try:
-                    downloaded_file = self._download_file(downloaded_file)
-                    break
-
-                except LandsatDownloaderDownloadedFileHasDifferentSize as e:
-                    self._logger.error(e)
-                    self._logger.error("Redownloading...")
-                    continue
-
-            if downloaded_file is False:
-                # File has already been downloaded, let's continue with the next file.
-                continue
-            """
-
-            # TODO - napsat rozbalení metadat z taru
-            downloaded_file.update(
-                {
-                    "metadata_xml_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.xml",
-                    "metadata_xml_file_path": str(
-                        Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_MTL.xml")),
-                    "metadata_txt_s3_bucket_key": f"{downloaded_file['dataset']}/{downloaded_file['displayId']}_MTL.txt",
-                    "metadata_txt_file_path": str(
-                        Path.joinpath(Path(self._workdir), downloaded_file['displayId'] + "_MTL.txt")),
-                })
-
-            with tarfile.open(name=downloaded_file['downloaded_file_path']) as tar:
-                try:
-                    tar.extract(downloaded_file['displayId'] + "_MTL.txt", self._workdir)
-                    tar.extract(downloaded_file['displayId'] + "_MTL.xml", self._workdir)
-                except KeyError:
-                    print(f"Warning: File not found in the tar archive.")
-
-            downloaded_file = self.__catalogue_file(downloaded_file, geojson)
-            downloaded_file = self._save_to_s3(downloaded_file)
-
-        return True
-
     def run(self):
         days_to_download = self._get_downloadable_days()
 
@@ -314,8 +200,6 @@ class LandsatDownloader:
 
                     for downloaded_file in downloaded_files:
                         downloaded_file.process()  # TODO tady udělat threading
-
-                    # self._download_and_catalogize(downloadable_files, geojsons[geojson_key])
 
                     self._m2m_api_connector.scene_list_remove(scene_label)
 
