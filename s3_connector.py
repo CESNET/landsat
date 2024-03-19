@@ -60,7 +60,7 @@ class S3Connector:
         Method checks whether this file already exists on S3 storage.
 
         :param bucket_key: S3 key of the checked file
-        :param expected_length: [int] Expected lenght of file in bytes
+        :param expected_length: [int] Expected lenght of file in bytes, or None if we do not want to check size
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
 
@@ -76,10 +76,15 @@ class S3Connector:
 
         # File exists...
 
-        if str(key_head['ContentLength']) == expected_length:
-            # ...and have the right size
-            return True
+        if expected_length is not None:
+            # We have to check sizes
+            if str(key_head['ContentLength']) == expected_length:
+                # ...and have the right size
+                return True
+            else:
+                # ...but does not have the right size. Let's delete this key and download it again.
+                self.delete_key(bucket_key)
+                return False
         else:
-            # ...but does not have the right size. Let's delete this key and download it again.
-            self.delete_key(bucket_key)
-            return False
+            # We do not have to check sizes, file exists and that's enough
+            return True

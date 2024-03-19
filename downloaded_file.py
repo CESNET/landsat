@@ -26,7 +26,6 @@ class DownloadedFile:
     _metadata_txt_file = None
     _metadata_xml_file = None
     _feature_json_file = None
-    _feature_id_json_file = None
 
     _feature_dict = None
     _feature_id = None
@@ -67,6 +66,8 @@ class DownloadedFile:
 
         self._workdir = workdir
         self._download_host = s3_download_host
+
+        self._feature_id_json_file = self._workdir.joinpath(self._display_id + "_featureId.json")
 
     def __del__(self):
         if self._data_file is not None:
@@ -149,10 +150,17 @@ class DownloadedFile:
         :param expected_length: [int] Expected lenght of file in bytes
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
-        return self._s3_connector.check_if_key_exists(
-            bucket_key=self._get_s3_bucket_key_of_attribute(self._filename),
-            expected_length=expected_length
-        )
+        exists = (
+                     self._s3_connector.check_if_key_exists(
+                         bucket_key=self._get_s3_bucket_key_of_attribute(self._filename),
+                         expected_length=expected_length
+                     )  # Checks whether the data file itself exists
+                 ) and (
+                     self._s3_connector.check_if_key_exists(
+                         bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_id_json_file),
+                         expected_length=None
+                     )  # Checks whether the featureId is uploaded - that means, that the data is registered to STAC
+                 )
 
     def _download_self(self):
         """
@@ -276,9 +284,11 @@ class DownloadedFile:
         self._dump_stac_feature_into_json()
 
     def _save_feature_id(self):
-        feature_id_json_dict = {'featureId': self._feature_id}
+        feature_id_json_dict = {
+            'displayId': self._display_id,
+            'featureId': self._feature_id
+        }
 
-        self._feature_id_json_file = self._workdir.joinpath(self._display_id + "_featureId.json")
         with open(self._feature_id_json_file, "w") as feature_id_json_file:
             feature_id_json_file.write(json.dumps(feature_id_json_dict))
 
