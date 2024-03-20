@@ -12,8 +12,11 @@ import config.landsat_config as landsat_config
 
 from landsat_downloader import LandsatDownloader
 
-from exceptions.m2m_api_connector import *
-from exceptions.stac_connector import *
+
+def exception_wait():
+    sleep_time = 60 * 60
+    logger.critical(f"Program will wait for {sleep_time} seconds.")
+    time.sleep(sleep_time)
 
 
 def setup_logging(current_path):
@@ -47,12 +50,20 @@ if __name__ == '__main__':
     setup_logging(root_dir)
     logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    landsat_downloader = LandsatDownloader(
-        root_directory=root_dir,
-        working_directory=Path(landsat_config.working_directory),
-        logger=logger,
-        feature_download_host=landsat_config.s3_download_host
-    )
+    landsat_downloader = None
+    while landsat_downloader is None:
+        try:
+            landsat_downloader = LandsatDownloader(
+                root_directory=root_dir,
+                working_directory=Path(landsat_config.working_directory),
+                logger=logger,
+                feature_download_host=landsat_config.s3_download_host
+            )
+        except Exception as e:
+            logger.critical(e, exc_info=True)
+            exception_wait()
+            continue
+
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
     while True:
@@ -66,31 +77,15 @@ if __name__ == '__main__':
         try:
             landsat_downloader.run()
 
-        except M2MAPIRequestTimeout as e:
-            logger.critical(e, exc_info=True)
-
-            sleep_for = 60 * 60
-            logger.critical(f"Program will wait for {sleep_for} seconds.")
-            time.sleep(sleep_for)
-
-            continue
-
-        except STACRequestTimeout as e:
-            logger.critical(e, exc_info=True)
-
-            sleep_for = 60 * 60
-            logger.critical(f"Program will wait for {sleep_for} seconds.")
-            time.sleep(sleep_for)
-
-            continue
-
         except Exception as e:
-            exception_occurred = True
             logger.critical(e, exc_info=True)
-            exit(-1)
+            exception_wait()
+            continue
 
         while datetime.datetime.utcnow() < next_run_at:
             sleep_for = int((next_run_at - datetime.datetime.utcnow()).total_seconds())
             logger.info(
-                "Downloader will wait " + str(sleep_for) + " seconds. Next run will be at " + str(next_run_at))
+                f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
+                 Next run is scheduled to {str(next_run_at)}."
+            )
             time.sleep(sleep_for)

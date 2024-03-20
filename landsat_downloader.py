@@ -33,16 +33,6 @@ class LandsatDownloader:
         "landsat_mss_c2_l1"
     ]
 
-    _dataset_fullname = {
-        "landsat_ot_c2_l1": "Landsat 8-9 OLI/TIRS C2 L1",
-        "landsat_ot_c2_l2": "Landsat 8-9 OLI/TIRS C2 L2",
-        "landsat_etm_c2_l1": "Landsat 7 ETM+ C2 L1",
-        "landsat_etm_c2_l2": "Landsat 7 ETM+ C2 L2",
-        "landsat_tm_c2_l1": "Landsat 4-5 TM C2 L1",
-        "landsat_tm_c2_l2": "Landsat 4-5 TM C2 L2",
-        "landsat_mss_c2_l1": "Landsat 1-5 MSS C2 L1"
-    }
-
     def __init__(
             self,
             m2m_username=None, m2m_token=None,

@@ -138,9 +138,18 @@ class STACConnector:
             if feature_id['ErrorCode'] == 409:
                 feature_id = self.update_stac_item(json_dict, collection, feature_id['ErrorMessage'].split(' ')[1])
             else:
-                # TODO dodělat chybu
                 raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
 
+        elif 'errors' in feature_id.keys():
+            if len(feature_id['errors']) != 0:
+                if feature_id['errors'][0]['code'] == 409:
+                    feature_id = self.update_stac_item(
+                        json_dict,
+                        collection,
+                        feature_id['errors'][0]['error'].split(' ')[1]
+                    )
+                else:
+                    raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
         else:
             feature_id = feature_id['features'][0]['featureId']
 
