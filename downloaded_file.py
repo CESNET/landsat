@@ -141,16 +141,18 @@ class DownloadedFile:
                 local_file=self._metadata_xml_file,
                 bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
             )
+            self._s3_connector.upload_file(
+                local_file=self._angle_coefficient_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+            )
 
             # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
             self._prepare_stac_feature_structure()
 
         else:
             # File is already downloaded in S3, just regenerate feature JSON and re-register it
-            self._download_feature_metadata_xml()
-            self._download_feature_angle_coefficient()
+            self._download_feature_from_s3()
             self._prepare_stac_feature_structure()
-            # self._update_json_feature()
 
         self._s3_connector.upload_file(
             local_file=self._feature_json_file,
@@ -166,19 +168,13 @@ class DownloadedFile:
         :param expected_length: [int] Expected lenght of file in bytes
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
-        exists = (
-                     self._s3_connector.check_if_key_exists(
-                         bucket_key=self._get_s3_bucket_key_of_attribute(self._filename),
-                         expected_length=expected_length
-                     )  # Checks whether the data file itself exists
-                 ) and (
-                     self._s3_connector.check_if_key_exists(
-                         bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_id_json_file),
-                         expected_length=None
-                     )  # Checks whether the featureId is uploaded - that means, that the data is registered to STAC
-                 )
 
-        return exists
+        return (
+            self._s3_connector.check_if_key_exists(
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._filename),
+                expected_length=expected_length
+            )  # Checks whether the data file itself exists
+        )
 
     def _download_self(self):
         """
@@ -243,17 +239,33 @@ class DownloadedFile:
         self._metadata_xml_file = self._workdir.joinpath(metadata_xml)
         self._angle_coefficient_file = self._workdir.joinpath(angle_coefficient)
 
-    def _download_feature_metadata_xml(self):
-        filename = self._display_id + "_MTL.xml"
-        self._metadata_xml_file = self._workdir.joinpath(filename)
+    def _download_feature_from_s3(self):
+        self._metadata_txt_file = self._workdir.joinpath(f"{self._display_id}_MTL.txt")
+        self._s3_connector.download_file(
+            self._metadata_txt_file,
+            self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
+        )
 
-        self._s3_connector.download_file(self._metadata_xml_file, self._get_s3_bucket_key_of_attribute(filename))
+        self._metadata_xml_file = self._workdir.joinpath(f"{self._display_id}_MTL.xml")
+        self._s3_connector.download_file(
+            self._metadata_xml_file,
+            self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
+        )
 
-    def _download_feature_angle_coefficient(self):
-        filename = self._display_id + "_ANG.txt"
-        self._angle_coefficient_file = self._workdir.joinpath(filename)
+        self._angle_coefficient_file = self._workdir.joinpath(f"{self._display_id}_ANG.txt")
+        self._s3_connector.download_file(
+            self._angle_coefficient_file,
+            self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+        )
 
-        self._s3_connector.download_file(self._angle_coefficient_file, self._get_s3_bucket_key_of_attribute(filename))
+        self._data_file = self._workdir.joinpath(f"{self._display_id}.tar")
+        # Tady se samotný datový soubor nemusí znova z S3 stahovat, stačí jen metadata
+        """
+        self._s3_connector.download_file(
+            self._data_file,
+            self._get_s3_bucket_key_of_attribute(self._data_file)
+        )
+        """
 
     def _dump_stac_feature_into_json(self, feature_dict=None):
         if feature_dict is not None:
@@ -301,20 +313,36 @@ class DownloadedFile:
             )
         )
 
-        stac_item_dict['assets']['data']['href'] = urlunsplit(
+        stac_item_dict['assets']['ang']['href'] = urlunsplit(
             (
                 self._download_host.scheme,
                 self._download_host.netloc,
-                f"{self._get_s3_bucket_key_of_attribute(self._data_file)}",
+                f"{self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)}",
                 "", ""
             )
         )
-        stac_item_dict['assets']['data']['type'] = mimetypes.guess_type(self._data_file)[0]
-        stac_item_dict['assets']['data']['title'] = self._dataset_fullname[self._dataset]
-        stac_item_dict['assets']['data']['title'] = f"{self._dataset_fullname[self._dataset]} full data tarball."
+
+        stac_item_dict['assets'].update(
+            {
+                'data': {
+                    'href': urlunsplit(
+                        (
+                            self._download_host.scheme,
+                            self._download_host.netloc,
+                            f"{self._get_s3_bucket_key_of_attribute(self._data_file)}",
+                            "", ""
+                        )
+                    ),
+                    'type': mimetypes.guess_type(str(self._data_file))[0],
+                    'title': self._dataset_fullname[self._dataset],
+                    'description': f"{self._dataset_fullname[self._dataset]} full data tarball."
+                }
+            }
+        )
 
         from stac_templates.feature import feature
-        self._feature_dict = feature['features'] = [stac_item_dict]
+        feature['features'].append(stac_item_dict)
+        self._feature_dict = feature
         self._dump_stac_feature_into_json()
 
     def _update_json_feature(self):

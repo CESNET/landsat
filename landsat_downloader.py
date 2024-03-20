@@ -100,7 +100,7 @@ class LandsatDownloader:
         import shutil
         self._logger.info(f"Initial cleanup: Deleting {self._workdir}")
         # self._workdir.unlink(missing_ok=True) # Does not work, returns WinError 5: Access Denied
-        shutil.rmtree(self._workdir, ignore_errors=False)
+        shutil.rmtree(self._workdir, ignore_errors=True)
 
         self._logger.info(f"Initial cleanup: Creating directory {self._workdir}")
         self._workdir.mkdir(parents=True, exist_ok=True)
