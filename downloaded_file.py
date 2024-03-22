@@ -102,6 +102,9 @@ class DownloadedFile:
         if self._feature_id_json_file is not None:
             self._feature_id_json_file.unlink(missing_ok=True)
 
+    def get_display_id(self):
+        return self._display_id
+
     def _get_s3_bucket_key_of_attribute(self, attribute):
         attribute = (
             str(attribute).  # Attribute

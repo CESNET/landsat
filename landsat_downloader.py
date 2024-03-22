@@ -1,12 +1,13 @@
 import json
 import logging
 import datetime
+import threading
+
 from pathlib import Path
 
 from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
 from s3_connector import S3Connector
-
 from downloaded_file import DownloadedFile
 
 """
@@ -190,8 +191,18 @@ class LandsatDownloader:
                             )
                         )
 
+                    threads = []
+
                     for downloaded_file in downloaded_files:
-                        downloaded_file.process()  # TODO tady udělat threading
+                        thread = threading.Thread(
+                            target=downloaded_file.process,
+                            name=f"Thread-{downloaded_file.get_display_id()}"
+                        )
+                        threads.append(thread)
+                        thread.start()
+
+                    for thread in threads:
+                        thread.join()
 
                     self._m2m_api_connector.scene_list_remove(scene_label)
 

@@ -173,4 +173,6 @@ class STACConnector:
             data=json.dumps(feature)
         )
 
+        response = json.loads(response.content)
+
         return feature_id

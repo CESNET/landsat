@@ -28,7 +28,7 @@ def setup_logging(current_path):
     logger_landsat = logging.getLogger(landsat_config.log_logger)
     logger_landsat.setLevel(landsat_config.log_level)
 
-    log_format = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-4.4s]  %(message)s")
+    log_format = logging.Formatter("%(asctime)s [%(threadName)s] [%(levelname)s]  %(message)s")
 
     rotating_info_handler = TimedRotatingFileHandler(log_file, when="midnight")
     rotating_info_handler.setFormatter(log_format)
