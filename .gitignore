@@ -1,9 +1,10 @@
 .idea
 .git
 __pycache__
-log
-config/m2m_config.py
-config/stac_config.py
-config/s3_config.py
-workdir
-download
+downloader/log
+downloader/workdir
+downloader/config/m2m_config.py
+downloader/config/stac_config.py
+downloader/config/s3_config.py
+http_server/log
+http_server/.env

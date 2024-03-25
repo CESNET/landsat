@@ -194,15 +194,30 @@ class LandsatDownloader:
                     threads = []
 
                     for downloaded_file in downloaded_files:
-                        thread = threading.Thread(
-                            target=downloaded_file.process,
-                            name=f"Thread-{downloaded_file.get_display_id()}"
+                        threads.append(
+                            threading.Thread(
+                                target=downloaded_file.process,
+                                name=f"Thread-{downloaded_file.get_display_id()}"
+                            )
                         )
-                        threads.append(thread)
-                        thread.start()
+
+                    started_threads = []  # There are no started threads
+                    for thread in threads:
+                        if len(started_threads) < 10:  # If there is less than 10 started threads...
+                            thread.start()  # ...start a new one...
+                            started_threads.append(thread)  # ...and add it into the list of started threads
+
+                        else:  # If there is 10 or more started threads, we can not start a new thread...
+                            for started_thread in started_threads:
+                                started_thread.join()  # ...so we wait for those started threads to finish...
+
+                            started_threads = []  # ...then we clear the array of started threads...
+
+                            thread.start()  # ...start the thread we wanted to start as eleventh thread...
+                            started_threads.append(thread)  # ...and add it to the list of started threads.
 
                     for thread in threads:
-                        thread.join()
+                        thread.join()  # In the end we will wait for all the threads to finish
 
                     self._m2m_api_connector.scene_list_remove(scene_label)
 

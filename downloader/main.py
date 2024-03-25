@@ -69,7 +69,7 @@ if __name__ == '__main__':
     while True:
         start_time = datetime.datetime.utcnow()
         next_run_at = datetime.datetime.combine(
-            datetime.datetime.utcnow().date() + datetime.timedelta(days=1),
+            datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
             datetime.time(hour=9, minute=00)
         )
 
@@ -82,8 +82,8 @@ if __name__ == '__main__':
             exception_wait()
             continue
 
-        while datetime.datetime.utcnow() < next_run_at:
-            sleep_for = int((next_run_at - datetime.datetime.utcnow()).total_seconds())
+        while datetime.datetime.now(datetime.UTC) < next_run_at:
+            sleep_for = int((next_run_at - datetime.datetime.now(datetime.UTC)).total_seconds())
             logger.info(
                 f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
                  Next run is scheduled to {str(next_run_at)}."

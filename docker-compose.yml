@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  http-server:
+    build: http_server
+    volumes:
+      - ./:/app
+    ports:
+      - "8080:8080"
+    env_file:
+      - http_server/.env
