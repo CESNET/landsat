@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  downloader:
+    build: ./downloader/
+    volumes:
+      - type: bind
+        source: ./downloader
+        target: /app
+
+  http-server:
+    build: ./http_server/
+    volumes:
+      - ./http_server/:/app
+    ports:
+      - "8080:8080"
+    env_file:
+      - http_server/.env
