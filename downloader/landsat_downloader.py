@@ -10,6 +10,8 @@ from stac_connector import STACConnector
 from s3_connector import S3Connector
 from downloaded_file import DownloadedFile
 
+from config import landsat_config
+
 """
 Create file ./config/landsat_config.py with following content:
 
@@ -174,7 +176,7 @@ class LandsatDownloader:
                         f"date_start: {day}, date_end: {day}."
                     )
 
-                    scene_label = "landsat_downloader_"
+                    scene_label = landsat_config.scene_label
                     downloadable_files_attributes = self._m2m_api_connector.get_downloadable_files(
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=scene_label
                     )

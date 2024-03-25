@@ -19,3 +19,5 @@ log_logger = "LandsatLogger"
 working_directory = "workdir"
 
 s3_download_host = "http://147.251.115.146:8081/"
+
+scene_label = "landsat_downloader_"
