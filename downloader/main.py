@@ -67,7 +67,7 @@ if __name__ == '__main__':
     logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
     while True:
-        start_time = datetime.datetime.utcnow()
+        start_time = datetime.datetime.now(datetime.UTC)
         next_run_at = datetime.datetime.combine(
             datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
             datetime.time(hour=9, minute=00)

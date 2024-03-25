@@ -83,6 +83,8 @@ class DownloadedFile:
 
         self._feature_id_json_file = self._workdir.joinpath(self._display_id + "_featureId.json")
 
+        self.exception_occurred = None
+
     def __del__(self):
         if self._data_file is not None:
             self._data_file.unlink(missing_ok=True)
@@ -114,55 +116,58 @@ class DownloadedFile:
         return f"{self._dataset}/{attribute}"
 
     def process(self):
+        try:
+            # ==================================== DOWNLOADING FILE =======================================================
+            file_downloaded = None
+            while True:
+                try:
+                    file_downloaded = self._download_self()
+                    break
 
-        # ==================================== DOWNLOADING FILE =======================================================
-        file_downloaded = None
-        while True:
-            try:
-                file_downloaded = self._download_self()
-                break
+                except DownloadedFileDownloadedFileHasDifferentSize as e:
+                    self._logger.error(e)
+                    self._logger.error("Redownloading...")
+                    continue
+            # =============================================================================================================
 
-            except DownloadedFileDownloadedFileHasDifferentSize as e:
-                self._logger.error(e)
-                self._logger.error("Redownloading...")
-                continue
-        # =============================================================================================================
+            if file_downloaded:
+                self._untar_metadata()
 
-        if file_downloaded:
-            self._untar_metadata()
+                # Uploading data file and metadata to S3
+                self._s3_connector.upload_file(
+                    local_file=self._data_file,
+                    bucket_key=self._get_s3_bucket_key_of_attribute(self._data_file)
+                )
+                self._s3_connector.upload_file(
+                    local_file=self._metadata_txt_file,
+                    bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
+                )
+                self._s3_connector.upload_file(
+                    local_file=self._metadata_xml_file,
+                    bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
+                )
+                self._s3_connector.upload_file(
+                    local_file=self._angle_coefficient_file,
+                    bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+                )
 
-            # Uploading data file and metadata to S3
+                # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
+                self._prepare_stac_feature_structure()
+
+            else:
+                # File is already downloaded in S3, just regenerate feature JSON and re-register it
+                self._download_feature_from_s3()
+                self._prepare_stac_feature_structure()
+
             self._s3_connector.upload_file(
-                local_file=self._data_file,
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._data_file)
+                local_file=self._feature_json_file,
+                bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_json_file)
             )
-            self._s3_connector.upload_file(
-                local_file=self._metadata_txt_file,
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
-            )
-            self._s3_connector.upload_file(
-                local_file=self._metadata_xml_file,
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
-            )
-            self._s3_connector.upload_file(
-                local_file=self._angle_coefficient_file,
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
-            )
+            self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
+            self._save_feature_id()
 
-            # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
-            self._prepare_stac_feature_structure()
-
-        else:
-            # File is already downloaded in S3, just regenerate feature JSON and re-register it
-            self._download_feature_from_s3()
-            self._prepare_stac_feature_structure()
-
-        self._s3_connector.upload_file(
-            local_file=self._feature_json_file,
-            bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_json_file)
-        )
-        self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
-        self._save_feature_id()
+        except Exception as exception:
+            self.exception_occurred = exception
 
     def _check_if_already_downloaded(self, expected_length):
         """

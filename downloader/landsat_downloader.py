@@ -210,4 +210,8 @@ class LandsatDownloader:
 
                     self._m2m_api_connector.scene_list_remove(scene_label)
 
+                    for downloaded_file in downloaded_files:
+                        if downloaded_file.exception_occurred is not None:
+                            raise downloaded_file.exception_occurred
+
             self._update_last_downloaded_day(day)
