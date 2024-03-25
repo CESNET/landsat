@@ -3,7 +3,9 @@ services:
   downloader:
     build: ./downloader/
     volumes:
-      - ./downloader/:/app
+      - type: bind
+        source: ./downloader
+        target: /app
 
   http-server:
     build: ./http_server/
