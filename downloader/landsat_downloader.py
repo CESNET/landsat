@@ -12,19 +12,6 @@ from downloaded_file import DownloadedFile
 
 from config import landsat_config
 
-"""
-Create file ./config/landsat_config.py with following content:
-
-log_directory = "log"
-log_name = "landsat.log"
-log_level = 20
-log_logger = "LandsatLogger"
-working_directory = "workdir"
-s3_download_host = "host with s3 download relay"
-
-...or your values could be different. As you wish.
-"""
-
 
 class LandsatDownloader:
     _last_downloaded_day_filename = 'last_downloaded_day.json'
@@ -176,7 +163,7 @@ class LandsatDownloader:
                         f"date_start: {day}, date_end: {day}."
                     )
 
-                    scene_label = landsat_config.scene_label
+                    scene_label = landsat_config.m2m_scene_label
                     downloadable_files_attributes = self._m2m_api_connector.get_downloadable_files(
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=scene_label
                     )
