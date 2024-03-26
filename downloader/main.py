@@ -89,8 +89,8 @@ if __name__ == '__main__':
             while now < next_run_at:
                 sleep_for = int((next_run_at - now).total_seconds())
                 logger.info(
-                    f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
-                     Next run is scheduled to {str(next_run_at)}."
+                    f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds. " +
+                    f"Next run is scheduled to {str(next_run_at)}."
                 )
                 time.sleep(sleep_for)
 
