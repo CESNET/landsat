@@ -150,6 +150,10 @@ class STACConnector:
                     )
                 else:
                     raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
+
+            else:
+                feature_id = feature_id['features'][0]['featureId']
+
         else:
             feature_id = feature_id['features'][0]['featureId']
 
