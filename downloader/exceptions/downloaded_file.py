@@ -57,3 +57,8 @@ class DownloadedFileUrlDoesNotContainFilename(DownloadedFileError):
 class DownloadedFileDoesNotContainMetadata(DownloadedFileError):
     def __init__(self, message="Downloaded file does not contain metadata!", display_id=None):
         super().__init__(message=message, display_id=display_id)
+
+
+class DownloadedFileThreadLockNotSet(DownloadedFileError):
+    def __init__(self, message="Thread lock is not set!", display_id=None):
+        super().__init__(message=message, display_id=display_id)
