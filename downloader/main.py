@@ -48,46 +48,52 @@ if __name__ == '__main__':
     root_dir = Path(__file__).parent.resolve()
 
     setup_logging(root_dir)
-    logger.info("=== LANDSAT DOWNLOADER STARTING ===")
 
-    landsat_downloader = None
-    while landsat_downloader is None:
-        try:
-            landsat_downloader = LandsatDownloader(
-                root_directory=root_dir,
-                working_directory=Path(landsat_config.working_directory),
-                logger=logger,
-                feature_download_host=landsat_config.s3_download_host
+    try:
+        logger.info("=== LANDSAT DOWNLOADER STARTING ===")
+
+        landsat_downloader = None
+        while landsat_downloader is None:
+            try:
+                landsat_downloader = LandsatDownloader(
+                    root_directory=root_dir,
+                    working_directory=Path(landsat_config.working_directory),
+                    logger=logger,
+                    feature_download_host=landsat_config.s3_download_host
+                )
+            except Exception as e:
+                logger.critical(e, exc_info=True)
+                exception_wait()
+                continue
+
+        logger.info("=== LANDSAT DOWNLOADER STARTED ===")
+
+        while True:
+            start_time = datetime.datetime.now(datetime.UTC)
+            next_run_at = datetime.datetime.combine(
+                datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
+                datetime.time(hour=9, minute=00)
             )
-        except Exception as e:
-            logger.critical(e, exc_info=True)
-            exception_wait()
-            continue
 
-    logger.info("=== LANDSAT DOWNLOADER STARTED ===")
+            exception_occurred = False
+            try:
+                landsat_downloader.run()
 
-    while True:
-        start_time = datetime.datetime.now(datetime.UTC)
-        next_run_at = datetime.datetime.combine(
-            datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
-            datetime.time(hour=9, minute=00)
-        )
+            except Exception as e:
+                logger.critical(e, exc_info=True)
+                exception_wait()
+                continue
 
-        exception_occurred = False
-        try:
-            landsat_downloader.run()
+            now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+            next_run_at = next_run_at.replace(tzinfo=None)
+            while now < next_run_at:
+                sleep_for = int((next_run_at - now).total_seconds())
+                logger.info(
+                    f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
+                     Next run is scheduled to {str(next_run_at)}."
+                )
+                time.sleep(sleep_for)
 
-        except Exception as e:
-            logger.critical(e, exc_info=True)
-            exception_wait()
-            continue
-
-        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-        next_run_at = next_run_at.replace(tzinfo=None)
-        while now < next_run_at:
-            sleep_for = int((next_run_at - now).total_seconds())
-            logger.info(
-                f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
-                 Next run is scheduled to {str(next_run_at)}."
-            )
-            time.sleep(sleep_for)
+    except Exception as exception:
+        logger.critical(exception)
+        exit(-1)
