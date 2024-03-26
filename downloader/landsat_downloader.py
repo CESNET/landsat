@@ -113,6 +113,9 @@ class LandsatDownloader:
         return last_downloaded_day
 
     def _update_last_downloaded_day(self, day):
+        if self._last_downloaded_day > day:
+            return
+
         last_downloaded_day_dict = {"last_downloaded_day": day.strftime("%Y-%m-%d")}
         local_file = Path(self._workdir).joinpath(self._last_downloaded_day_filename)
         local_file.touch(exist_ok=True)
@@ -135,10 +138,10 @@ class LandsatDownloader:
 
     def _get_downloadable_days(self):
         should_be_checked_since = datetime.datetime.utcnow().date() - datetime.timedelta(weeks=4)
-        last_downloaded_day = self._get_last_downloaded_day()
+        self._last_downloaded_day = self._get_last_downloaded_day()
 
-        if last_downloaded_day < should_be_checked_since:
-            date_from = last_downloaded_day
+        if self._last_downloaded_day < should_be_checked_since:
+            date_from = self._last_downloaded_day
         else:
             date_from = should_be_checked_since
 

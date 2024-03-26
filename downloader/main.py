@@ -82,8 +82,10 @@ if __name__ == '__main__':
             exception_wait()
             continue
 
-        while datetime.datetime.now(datetime.UTC).replace(tzinfo=None) < next_run_at.replace(tzinfo=None):
-            sleep_for = int((next_run_at - datetime.datetime.now(datetime.UTC)).total_seconds())
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        next_run_at = next_run_at.replace(tzinfo=None)
+        while now < next_run_at:
+            sleep_for = int((next_run_at - now).total_seconds())
             logger.info(
                 f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds.\
                  Next run is scheduled to {str(next_run_at)}."
