@@ -50,9 +50,14 @@ class DownloadedFile:
             stac_connector=None, s3_connector=None,
             workdir=None,
             s3_download_host=landsat_config.s3_download_host,
-            logger=logging.getLogger("DownloadedFile")
+            logger=logging.getLogger("DownloadedFile"),
+            thread_lock=None
     ):
         self._logger = logger
+
+        if thread_lock is None:
+            raise DownloadedFileThreadLockNotSet()
+        self._thread_lock = thread_lock
 
         if attributes is None:
             raise DownloadedFileWrongConstructorArgumentsPassed()
@@ -348,9 +353,17 @@ class DownloadedFile:
             }
         )
 
-        from stac_templates.feature import feature
-        feature['features'].append(stac_item_dict)
-        self._feature_dict = feature
+        """
+        with self._thread_lock:
+            from stac_templates.feature import feature
+            local_feature = feature
+            local_feature['features'] = [stac_item_dict]
+            self._feature_dict = local_feature
+        """
+        self._feature_dict = {
+            "type": "FeatureCollection",
+            "features": [stac_item_dict]
+        }
         self._dump_stac_feature_into_json()
 
     def _update_json_feature(self):
