@@ -126,8 +126,9 @@ class STACConnector:
             'Authorization': 'Bearer ' + self._stac_token
         }
 
+        stac_collections_items_url = self._stac_base_url + '/collections' + '/' + collection + '/items'
         response = requests.post(
-            url=self._stac_base_url + '/collections' + '/' + collection + '/items',
+            url=stac_collections_items_url,
             headers=headers,
             data=json.dumps(json_dict)
         )
@@ -157,7 +158,7 @@ class STACConnector:
         else:
             feature_id = feature_id['features'][0]['featureId']
 
-        self._logger.info(f"Data registered to STAC, feature_id={feature_id}")
+        self._logger.info(f"Data registered to STAC, url: {stac_collections_items_url}/{feature_id}")
 
         return feature_id
 

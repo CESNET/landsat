@@ -94,7 +94,17 @@ class M2MAPIConnector:
         response = self._send_request('download-options', api_payload)
         download_options = json.loads(response)
 
+        """
+        # Fixed below
         filtered_download_options = [do for do in download_options['data'] if do['downloadSystem'] == 'dds']
+        """
+
+        filtered_download_options = []
+        for download_option in download_options['data']:
+            if download_option['downloadSystem'] == 'dds' and download_option['available'] == True:
+                filtered_download_options.append(download_option)
+            elif download_option['downloadSystem'] == 'ls_zip' and download_option['available'] == True:
+                filtered_download_options.append(download_option)
 
         return filtered_download_options
 

@@ -15,9 +15,9 @@ from stac_connector import STACConnector
 from s3_connector import S3Connector
 
 from config import landsat_config
-from exceptions.downloaded_file import *
 
-import utils
+from exceptions.downloaded_file import *
+import botocore.exceptions
 
 
 class DownloadedFile:
@@ -36,13 +36,14 @@ class DownloadedFile:
     _workdir: Path
 
     _data_file = None
-    _metadata_txt_file = None
     _metadata_xml_file = None
     _angle_coefficient_file = None
     _feature_json_file = None
 
     _feature_dict = None
     _feature_id = None
+
+    _force_redownload_file = False
 
     def __init__(
             self,
@@ -94,9 +95,6 @@ class DownloadedFile:
         if self._data_file is not None:
             self._data_file.unlink(missing_ok=True)
 
-        if self._metadata_txt_file is not None:
-            self._metadata_txt_file.unlink(missing_ok=True)
-
         if self._metadata_xml_file is not None:
             self._metadata_xml_file.unlink(missing_ok=True)
 
@@ -144,24 +142,32 @@ class DownloadedFile:
                     bucket_key=self._get_s3_bucket_key_of_attribute(self._data_file)
                 )
                 self._s3_connector.upload_file(
-                    local_file=self._metadata_txt_file,
-                    bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
-                )
-                self._s3_connector.upload_file(
                     local_file=self._metadata_xml_file,
                     bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
                 )
-                self._s3_connector.upload_file(
-                    local_file=self._angle_coefficient_file,
-                    bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
-                )
+
+                if self._angle_coefficient_file is not None:
+                    self._s3_connector.upload_file(
+                        local_file=self._angle_coefficient_file,
+                        bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+                    )
 
                 # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
                 self._prepare_stac_feature_structure()
 
             else:
                 # File is already downloaded in S3, just regenerate feature JSON and re-register it
-                self._download_feature_from_s3()
+                try:
+                    self._download_feature_from_s3()
+                except botocore.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == '404':
+                        self._logger.error(e)
+                        self._logger.error("We need to re-download file again from USGS")
+
+                        self._force_redownload_file = True  # Setting the _force_redownload_file flag to True
+                        self.process()  # Running again self.process method to process the file again
+                        return  # After processing the file again return from this method to prevent never-ending loop
+
                 self._prepare_stac_feature_structure()
 
             self._s3_connector.upload_file(
@@ -181,6 +187,10 @@ class DownloadedFile:
         :param expected_length: [int] Expected lenght of file in bytes
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
+
+        # We forced to re-download file from USGS, thus returning False
+        if self._force_redownload_file:
+            return False
 
         return (
             self._s3_connector.check_if_key_exists(
@@ -236,40 +246,42 @@ class DownloadedFile:
         return True
 
     def _untar_metadata(self):
-        metadata_txt = self._display_id + "_MTL.txt"
         metadata_xml = self._display_id + "_MTL.xml"
+
+        angle_coefficient_present = True
         angle_coefficient = self._display_id + "_ANG.txt"
 
-        try:
-            with tarfile.open(name=self._data_file) as tar:
-                tar.extract(metadata_txt, self._workdir)
+        with tarfile.open(name=self._data_file) as tar:
+            try:
                 tar.extract(metadata_xml, self._workdir)
-                tar.extract(angle_coefficient, self._workdir)
-        except KeyError:
-            raise DownloadedFileDoesNotContainMetadata(display_id=self._display_id)
+            except KeyError:
+                raise DownloadedFileDoesNotContainMetadata(display_id=self._display_id)
 
-        self._metadata_txt_file = self._workdir.joinpath(metadata_txt)
+            try:
+                tar.extract(angle_coefficient, self._workdir)
+            except KeyError:
+                angle_coefficient_present = False
+
         self._metadata_xml_file = self._workdir.joinpath(metadata_xml)
-        self._angle_coefficient_file = self._workdir.joinpath(angle_coefficient)
+
+        if angle_coefficient_present:
+            self._angle_coefficient_file = self._workdir.joinpath(angle_coefficient)
 
     def _download_feature_from_s3(self):
-        self._metadata_txt_file = self._workdir.joinpath(f"{self._display_id}_MTL.txt")
-        self._s3_connector.download_file(
-            self._metadata_txt_file,
-            self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)
-        )
-
         self._metadata_xml_file = self._workdir.joinpath(f"{self._display_id}_MTL.xml")
         self._s3_connector.download_file(
             self._metadata_xml_file,
             self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
         )
 
-        self._angle_coefficient_file = self._workdir.joinpath(f"{self._display_id}_ANG.txt")
-        self._s3_connector.download_file(
-            self._angle_coefficient_file,
-            self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
-        )
+        try:
+            self._angle_coefficient_file = self._workdir.joinpath(f"{self._display_id}_ANG.txt")
+            self._s3_connector.download_file(
+                self._angle_coefficient_file,
+                self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+            )
+        except botocore.exceptions.ClientError as e:
+            self._angle_coefficient_file = None
 
         self._data_file = self._workdir.joinpath(f"{self._display_id}.tar")
         # Tady se samotný datový soubor nemusí znova z S3 stahovat, stačí jen metadata
@@ -290,47 +302,63 @@ class DownloadedFile:
             feature_json_file.write(json.dumps(self._feature_dict))
 
     def _stac_item_clear(self, stac_item_dict):
-        stac_item_dict['assets'].pop('thumbnail')
-        stac_item_dict['assets'].pop('reduced_resolution_browse')
-        stac_item_dict['assets'].pop('mtl.json')
-        stac_item_dict['assets'].pop('qa_pixel')
-        stac_item_dict['assets'].pop('qa_radsat')
-        stac_item_dict['assets'].pop('coastal')
-        stac_item_dict['assets'].pop('blue')
-        stac_item_dict['assets'].pop('green')
-        stac_item_dict['assets'].pop('red')
-        stac_item_dict['assets'].pop('nir08')
-        stac_item_dict['assets'].pop('swir16')
-        stac_item_dict['assets'].pop('swir22')
-        stac_item_dict['assets'].pop('qa_aerosol')
+        if 'thumbnail' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('thumbnail')
+
+        if 'reduced_resolution_browse' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('reduced_resolution_browse')
+
+        if 'mtl.json' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('mtl.json')
+
+        if 'mtl.txt' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('mtl.txt')
+
+        if 'ang' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('ang')
+
+        if 'qa_pixel' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('qa_pixel')
+
+        if 'qa_radsat' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('qa_radsat')
+
+        if 'qa_aerosol' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('qa_aerosol')
+
+        if 'coastal' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('coastal')
+
+        if 'blue' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('blue')
+
+        if 'green' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('green')
+
+        if 'red' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('red')
+
+        if 'nir08' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('nir08')
+
+        if 'swir16' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('swir16')
+
+        if 'swir22' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('swir22')
+
+        if 'nir09' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('nir09')
 
     def _prepare_stac_feature_structure(self):
         stac_item_dict = stac_landsat.create_item(str(self._metadata_xml_file)).to_dict(include_self_link=False)
         self._stac_item_clear(stac_item_dict)
-
-        stac_item_dict['assets']['mtl.txt']['href'] = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                f"{self._get_s3_bucket_key_of_attribute(self._metadata_txt_file)}",
-                "", ""
-            )
-        )
 
         stac_item_dict['assets']['mtl.xml']['href'] = urlunsplit(
             (
                 self._download_host.scheme,
                 self._download_host.netloc,
                 f"{self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)}",
-                "", ""
-            )
-        )
-
-        stac_item_dict['assets']['ang']['href'] = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                f"{self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)}",
                 "", ""
             )
         )
@@ -366,6 +394,7 @@ class DownloadedFile:
         }
         self._dump_stac_feature_into_json()
 
+    """
     def _update_json_feature(self):
         # TODO tahle metoda by už neměla být potřeba
         with open(self._feature_json_file, "r") as feature_json_file:
@@ -405,10 +434,12 @@ class DownloadedFile:
         self._feature_dict['features'][0]['assets']['data']['href'] = data_href
 
         self._dump_stac_feature_into_json()
+    """
 
     def _save_feature_id(self):
         feature_id_json_dict = {
             'displayId': self._display_id,
+            'dataset': self._dataset,
             'featureId': self._feature_id
         }
 

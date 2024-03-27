@@ -25,7 +25,7 @@ class S3Connector:
             secret_key=s3_config.secret_key,
             host_bucket=s3_config.host_bucket
     ):
-        self.logger = logger
+        self._logger = logger
         self.s3_client = boto3.client(
             service_name=service_name,
             endpoint_url=s3_endpoint,
@@ -36,23 +36,21 @@ class S3Connector:
 
     def upload_file(self, local_file, bucket_key):
         local_file = str(local_file)
-        self.logger.info(f"Uploading file={local_file} to S3 as key={bucket_key}.")
+        self._logger.info(f"Uploading file={local_file} to S3 as key={bucket_key}.")
         self.s3_client.upload_file(local_file, self.bucket, bucket_key)
 
     def download_file(self, path_to_download, bucket_key):
-        self.logger.info(f"Downloading key={bucket_key} into file={str(path_to_download)}.")
+        self._logger.info(f"Downloading key={bucket_key} into file={str(path_to_download)}.")
 
         try:
             with open(path_to_download, 'wb') as downloaded_file:
                 self.s3_client.download_fileobj(self.bucket, bucket_key, downloaded_file)
 
         except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == '404':
-                self.logger.error(e)
-                exit(-1)
+            raise e
 
     def delete_key(self, bucket_key):
-        self.logger.info(f"Deleting S3 key={bucket_key}.")
+        self._logger.info(f"Deleting S3 key={bucket_key}.")
         self.s3_client.delete_object(Bucket=self.bucket, Key=bucket_key)
 
     def check_if_key_exists(self, bucket_key, expected_length):
