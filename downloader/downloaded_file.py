@@ -366,6 +366,7 @@ class DownloadedFile:
         }
         self._dump_stac_feature_into_json()
 
+    """
     def _update_json_feature(self):
         # TODO tahle metoda by už neměla být potřeba
         with open(self._feature_json_file, "r") as feature_json_file:
@@ -405,6 +406,7 @@ class DownloadedFile:
         self._feature_dict['features'][0]['assets']['data']['href'] = data_href
 
         self._dump_stac_feature_into_json()
+    """
 
     def _save_feature_id(self):
         feature_id_json_dict = {
