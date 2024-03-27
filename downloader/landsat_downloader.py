@@ -14,7 +14,7 @@ from config import landsat_config
 
 
 class LandsatDownloader:
-    _last_downloaded_day_filename = 'last_downloaded_day.json'
+    _last_downloaded_day_filename = 'last_downloaded_day_past_AFTER_DOWNLOADING_ALL_HISTORICAL_DATA_CAN_BE_REMOVED.json'
 
     _demanded_datasets = [
         "landsat_ot_c2_l1", "landsat_ot_c2_l2",
@@ -140,12 +140,21 @@ class LandsatDownloader:
         should_be_checked_since = datetime.datetime.utcnow().date() - datetime.timedelta(weeks=4)
         self._last_downloaded_day = self._get_last_downloaded_day()
 
+        date_from = self._last_downloaded_day
+        """
         if self._last_downloaded_day < should_be_checked_since:
             date_from = self._last_downloaded_day
         else:
             date_from = should_be_checked_since
+        """
 
-        downloadable_days = self._create_array_of_downloadable_days(date_from, datetime.datetime.utcnow().date())
+        downloadable_days = self._create_array_of_downloadable_days(
+            date_from,
+            datetime.datetime.strptime(
+                "2024-01-01",
+                "%Y-%m-%d"
+            ).date()
+        )
 
         return downloadable_days
 
