@@ -336,6 +336,9 @@ class DownloadedFile:
         if 'swir22' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('swir22')
 
+        if 'nir09' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('nir09')
+
     def _prepare_stac_feature_structure(self):
         stac_item_dict = stac_landsat.create_item(str(self._metadata_xml_file)).to_dict(include_self_link=False)
         self._stac_item_clear(stac_item_dict)
@@ -425,6 +428,7 @@ class DownloadedFile:
     def _save_feature_id(self):
         feature_id_json_dict = {
             'displayId': self._display_id,
+            'dataset': self._dataset,
             'featureId': self._feature_id
         }
 
