@@ -43,6 +43,8 @@ class DownloadedFile:
     _feature_dict = None
     _feature_id = None
 
+    _force_redownload_file = False
+
     def __init__(
             self,
             attributes=None,
@@ -160,6 +162,11 @@ class DownloadedFile:
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == '404':
                         self._logger.error(e)
+                        self._logger.error("We need to re-download file again from USGS")
+
+                        self._force_redownload_file = True  # Setting the _force_redownload_file flag to True
+                        self.process()  # Running again self.process method to process the file again
+                        return  # After processing the file again return from this method to prevent never-ending loop
 
                 self._prepare_stac_feature_structure()
 
@@ -180,6 +187,10 @@ class DownloadedFile:
         :param expected_length: [int] Expected lenght of file in bytes
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
+
+        # We forced to re-download file from USGS, thus returning False
+        if self._force_redownload_file:
+            return False
 
         return (
             self._s3_connector.check_if_key_exists(
