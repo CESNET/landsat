@@ -158,7 +158,7 @@ class STACConnector:
         else:
             feature_id = feature_id['features'][0]['featureId']
 
-        self._logger.info(f"Data registered to STAC, url: {stac_collections_items_url}")
+        self._logger.info(f"Data registered to STAC, url: {stac_collections_items_url}/{feature_id}")
 
         return feature_id
 
