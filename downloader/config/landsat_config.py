@@ -19,4 +19,4 @@ working_directory = "workdir"
 
 m2m_scene_label = "landsat_downloader_"
 
-s3_download_host = "http://147.251.115.146:8081/"
+s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"

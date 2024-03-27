@@ -87,7 +87,7 @@ if __name__ == '__main__':
             now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             next_run_at = next_run_at.replace(tzinfo=None)
             while now < next_run_at:
-                sleep_for = int((next_run_at - now).total_seconds())
+                sleep_for = int((next_run_at - now).total_seconds())+60
                 logger.info(
                     f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds. " +
                     f"Next run is scheduled to {str(next_run_at)}."
