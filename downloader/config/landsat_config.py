@@ -17,6 +17,6 @@ log_logger = "LandsatLogger"
 
 working_directory = "workdir"
 
-m2m_scene_label = "landsat_downloader_past_"
+m2m_scene_label = "landsat_downloader_"
 
 s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"
