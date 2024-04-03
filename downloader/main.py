@@ -13,13 +13,27 @@ import config.landsat_config as landsat_config
 from landsat_downloader import LandsatDownloader
 
 
-def exception_wait():
-    sleep_time = 60 * 60
+def exception_wait(sleep_time=(60 * 60)):
+    """
+    Function waits for specified time period (seconds)
+    Logs critical since this function is meant to be called only when exception is raised
+
+    :param sleep_time: int, seconds, default 60*60
+    :return: nothing
+    """
+
     logger.critical(f"Program will wait for {sleep_time} seconds.")
     time.sleep(sleep_time)
 
 
 def setup_logging(current_path):
+    """
+    Setup logging and logrotating
+
+    :param current_path: root dir of the script (./ of main.py)
+    :return: nothing
+    """
+
     log_dir = os.path.join(current_path, landsat_config.log_directory)
     log_file = os.path.join(str(log_dir), landsat_config.log_name)
 
@@ -55,11 +69,10 @@ if __name__ == '__main__':
         landsat_downloader = None
         while landsat_downloader is None:
             try:
+                # Initializing instance of LandsatDownloader, passing root and
                 landsat_downloader = LandsatDownloader(
                     root_directory=root_dir,
-                    working_directory=Path(landsat_config.working_directory),
-                    logger=logger,
-                    feature_download_host=landsat_config.s3_download_host
+                    logger=logger
                 )
             except Exception as e:
                 logger.critical(e, exc_info=True)
@@ -69,13 +82,11 @@ if __name__ == '__main__':
         logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
         while True:
-            start_time = datetime.datetime.now(datetime.UTC)
             next_run_at = datetime.datetime.combine(
                 datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
                 datetime.time(hour=9, minute=00)
             )
 
-            exception_occurred = False
             try:
                 landsat_downloader.run()
 
@@ -87,12 +98,13 @@ if __name__ == '__main__':
             now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             next_run_at = next_run_at.replace(tzinfo=None)
             while now < next_run_at:
-                sleep_for = int((next_run_at - now).total_seconds())+60
+                sleep_for = int((next_run_at - now).total_seconds()) + 60
                 logger.info(
                     f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds. " +
                     f"Next run is scheduled to {str(next_run_at)}."
                 )
                 time.sleep(sleep_for)
+                now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
     except Exception as exception:
         logger.critical(exception)

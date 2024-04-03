@@ -28,10 +28,25 @@ class LandsatDownloader:
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
             s3_endpoint=None, s3_access_key=None, s3_secret_key=None, s3_host_bucket=None,
-            root_directory=None, working_directory=None,
+            root_directory: Path = None, working_directory: Path = Path(landsat_config.working_directory),
             logger=logging.getLogger('LandsatDownloader'),
-            feature_download_host=None
+            feature_download_host=landsat_config.s3_download_host
     ):
+        """
+        __init__
+        :param m2m_username:
+        :param m2m_token:
+        :param stac_username:
+        :param stac_password:
+        :param s3_endpoint:
+        :param s3_access_key:
+        :param s3_secret_key:
+        :param s3_host_bucket:
+        :param root_directory:
+        :param working_directory:
+        :param logger:
+        :param feature_download_host:
+        """
         logger.info("=== DOWNLOADER INITIALIZING ===")
 
         if root_directory is None:
