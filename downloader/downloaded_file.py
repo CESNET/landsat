@@ -350,6 +350,39 @@ class DownloadedFile:
         if 'nir09' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('nir09')
 
+        if 'atmos_opacity' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('atmos_opacity')
+
+        if 'cloud_qa' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('cloud_qa')
+
+        if 'lwir' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('lwir')
+
+        if 'atran' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('atran')
+
+        if 'cdist' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('cdist')
+
+        if 'drad' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('drad')
+
+        if 'urad' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('urad')
+
+        if 'trad' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('trad')
+
+        if 'emis' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('emis')
+
+        if 'emsd' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('emsd')
+
+        if 'qa' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('qa')
+
     def _prepare_stac_feature_structure(self):
         stac_item_dict = stac_landsat.create_item(str(self._metadata_xml_file)).to_dict(include_self_link=False)
         self._stac_item_clear(stac_item_dict)
