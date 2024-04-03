@@ -25,6 +25,16 @@ class S3Connector:
             secret_key=s3_config.secret_key,
             host_bucket=s3_config.host_bucket
     ):
+        """
+        Constructor of S3Connector class
+
+        :param logger:
+        :param service_name:
+        :param s3_endpoint:
+        :param access_key:
+        :param secret_key:
+        :param host_bucket:
+        """
         self._logger = logger
         self.s3_client = boto3.client(
             service_name=service_name,
@@ -35,11 +45,27 @@ class S3Connector:
         self.bucket = host_bucket
 
     def upload_file(self, local_file, bucket_key):
+        """
+        Uploads local_file to S3 storage as host_bucket/bucket_key
+
+        :param local_file: Absolute path to local file
+        :param bucket_key: bucket_key
+        :return: nothing
+        """
+
         local_file = str(local_file)
         self._logger.info(f"Uploading file={local_file} to S3 as key={bucket_key}.")
         self.s3_client.upload_file(local_file, self.bucket, bucket_key)
 
     def download_file(self, path_to_download, bucket_key):
+        """
+        Method downloads file from S3 storage into local file
+
+        :param path_to_download: absolute Path to local file into which file is downloaded
+        :param bucket_key: key of downloaded file. It will be used as follows: host_bucket/bucket_key
+        :return: nothing
+        :raise: botocore.exceptions.ClientError
+        """
         self._logger.info(f"Downloading key={bucket_key} into file={str(path_to_download)}.")
 
         try:
@@ -50,6 +76,12 @@ class S3Connector:
             raise e
 
     def delete_key(self, bucket_key):
+        """
+        Deletes key from S3 storage
+
+        :param bucket_key: deleted key, used as follows host_bucket/bucket_key
+        :return: nothing
+        """
         self._logger.info(f"Deleting S3 key={bucket_key}.")
         self.s3_client.delete_object(Bucket=self.bucket, Key=bucket_key)
 
@@ -60,6 +92,7 @@ class S3Connector:
         :param bucket_key: S3 key of the checked file
         :param expected_length: [int] Expected lenght of file in bytes, or None if we do not want to check size
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
+        :raise: botocore.exceptions.ClientError for every error other than HTTP/404
         """
 
         try:

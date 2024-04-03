@@ -81,11 +81,11 @@ if __name__ == '__main__':
 
         logger.info("=== LANDSAT DOWNLOADER STARTED ===")
 
-        while True:
+        while True:  # The downloading itself, repeat indefinitely
             next_run_at = datetime.datetime.combine(
                 datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
                 datetime.time(hour=9, minute=00)
-            )
+            )  # Next run tommorow at 9am UTC
 
             try:
                 landsat_downloader.run()
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
             now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             next_run_at = next_run_at.replace(tzinfo=None)
-            while now < next_run_at:
+            while now < next_run_at:  # If now is not after scheduled run, we will wat for it
                 sleep_for = int((next_run_at - now).total_seconds()) + 60
                 logger.info(
                     f"All downloaded. Downloader will now wait for {str(sleep_for)} seconds. " +
