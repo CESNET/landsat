@@ -63,6 +63,9 @@ app = Sanic("landsat_http_server")
 
 @app.route("/<path:path>")
 async def redirect(request, path):
+    if not ("landsat" in path):
+        return response.empty()
+
     s3_url = f"s3://landsat/{path}"  # Prepares path to S3 bucket using requested URL
 
     aws_command = f"aws s3 --endpoint-url https://s3.cl4.du.cesnet.cz presign {s3_url}"

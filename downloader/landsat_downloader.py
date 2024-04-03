@@ -14,8 +14,19 @@ from config import landsat_config
 
 
 class LandsatDownloader:
+    """
+
+    """
+
+    """
+    Filename of a .json file which contains information of last day that was downloaded.
+    By default located in s3 bucket landsat/last_downloaded_day.json
+    """
     _last_downloaded_day_filename = 'last_downloaded_day.json'
 
+    """
+    Datasets which will be downloaded
+    """
     _demanded_datasets = [
         "landsat_ot_c2_l1", "landsat_ot_c2_l2",
         "landsat_etm_c2_l1", "landsat_etm_c2_l2",
