@@ -14,8 +14,19 @@ from config import landsat_config
 
 
 class LandsatDownloader:
+    """
+    Class representing the Landsat downloader package
+    """
+
+    """
+    Filename of a .json file which contains information of last day that was downloaded.
+    By default located in s3 bucket landsat/last_downloaded_day.json
+    """
     _last_downloaded_day_filename = 'last_downloaded_day.json'
 
+    """
+    Datasets which will be downloaded
+    """
     _demanded_datasets = [
         "landsat_ot_c2_l1", "landsat_ot_c2_l2",
         "landsat_etm_c2_l1", "landsat_etm_c2_l2",
@@ -34,18 +45,18 @@ class LandsatDownloader:
     ):
         """
         __init__
-        :param m2m_username:
-        :param m2m_token:
-        :param stac_username:
-        :param stac_password:
-        :param s3_endpoint:
-        :param s3_access_key:
-        :param s3_secret_key:
-        :param s3_host_bucket:
-        :param root_directory:
-        :param working_directory:
+        :param m2m_username: Username used to log into USGS M2M API
+        :param m2m_token: Login token for USGS M2M API (Generated here: https://ers.cr.usgs.gov/)
+        :param stac_username: Username used for publishing features into STAC API
+        :param stac_password: Password of STAC API
+        :param s3_endpoint: URL of a S3 into which the downloaded data is registered
+        :param s3_access_key: Access key for S3 bucket
+        :param s3_secret_key: Secret key for S3 bucket
+        :param s3_host_bucket: S3 host bucket (by default it should be "landsat")
+        :param root_directory: Absolute path to the root directory of the script
+        :param working_directory: Absolute path to the working directory (temporary dir for downloaded data etc.)
         :param logger:
-        :param feature_download_host:
+        :param feature_download_host: URL of a host on which the http_server script is running
         """
         logger.info("=== DOWNLOADER INITIALIZING ===")
 
@@ -111,6 +122,11 @@ class LandsatDownloader:
         self._workdir.mkdir(parents=True, exist_ok=True)
 
     def _get_last_downloaded_day(self):
+        """
+        Method reads date of last downloaded day from S3 storage
+        :return: datetime of last downloaded day
+        """
+
         download_to = Path(self._workdir).joinpath(self._last_downloaded_day_filename)
 
         self._s3_connector.download_file(
@@ -128,6 +144,13 @@ class LandsatDownloader:
         return last_downloaded_day
 
     def _update_last_downloaded_day(self, day):
+        """
+        Method updates the file with date of last downloaded day on S3
+
+        :param day: datetime of last downloaded day
+        :return: nothing
+        """
+
         if self._last_downloaded_day > day:
             return
 
@@ -143,6 +166,14 @@ class LandsatDownloader:
         local_file.unlink(missing_ok=False)
 
     def _create_array_of_downloadable_days(self, date_from, date_to):
+        """
+        Method creates an array of days which are meant to be downloaded by input parameters
+
+        :param date_from: datetime of first day meant to be downloaded
+        :param date_to: datetime of last day meant to be downloaded
+        :return: array of datetimes
+        """
+
         downloadable_days = []
 
         while date_from < date_to:
@@ -152,6 +183,15 @@ class LandsatDownloader:
         return downloadable_days
 
     def _get_downloadable_days(self):
+        """
+        Method creates a date range from the day which must be downloaded first to the day which must be downloaded
+        last. Then using method _create_array_of_downloadable_days() method generates an array of all days which are
+        meant to be downloaded.
+        Everytime at least four weeks are being downloaded.
+
+        :return: array of datetime
+        """
+
         should_be_checked_since = datetime.datetime.utcnow().date() - datetime.timedelta(weeks=4)
         self._last_downloaded_day = self._get_last_downloaded_day()
 
@@ -165,17 +205,34 @@ class LandsatDownloader:
         return downloadable_days
 
     def run(self):
+        """
+        Main worker of LandsatDownloader class.
+        Method prepares array of days which are in need of downloaading and dictionary of geojsons for which we
+        are downloading files. These geojsons must be saved in ./geojson directory.
+        Then for every demanded day, dataset and geojson this method prepares M2M API scenes and retrieves URLs of
+        available dataset.
+        For every URL is created standalone instance of DownloadedFile class in which the method process() is executed
+        in threads.
+        When all the data for one of the demanded days is downloaded, this method invokes _update_last_downloaded_day()
+        and updates the last downloaded day accordingly.
+
+        :return: nothing
+        """
+
         days_to_download = self._get_downloadable_days()
 
+        """
+        Preparing the dict of demanded geojsons
+        """
         geojsons = {}
         geojson_files_paths = [Path(geojson_file) for geojson_file in Path('geojson').glob("*")]
         for geojson_file_path in geojson_files_paths:
             with open(geojson_file_path, 'r') as geojson_file:
                 geojsons.update({geojson_file_path: json.loads(geojson_file.read())})
 
-        for day in days_to_download:
-            for dataset in self._demanded_datasets:
-                for geojson_key in geojsons.keys():
+        for day in days_to_download:  # For each demanded day...
+            for dataset in self._demanded_datasets:  # ...each demanded dataset...
+                for geojson_key in geojsons.keys():  # ...and each demanded geojson...
                     self._logger.info(
                         f"Request for download dataset: {dataset}, location: {geojson_key}, " +
                         f"date_start: {day}, date_end: {day}."
@@ -200,7 +257,7 @@ class LandsatDownloader:
                             )
                         )
 
-                    threads = []
+                    threads = []  # Into this list we will save all the threads that we will run
 
                     for downloaded_file in downloaded_files:
                         threads.append(
@@ -208,7 +265,7 @@ class LandsatDownloader:
                                 target=downloaded_file.process,
                                 name=f"Thread-{downloaded_file.get_display_id()}"
                             )
-                        )
+                        )  # Preparing threads to be executed
 
                     started_threads = []  # There are no started threads
                     for thread in threads:

@@ -226,7 +226,21 @@ class M2MAPIConnector:
 
         return data.content
 
-    def _retry_request(self, endpoint, payload, max_retries, headers=None, timeout=10, sleep=5):
+    def _retry_request(self, endpoint, payload, max_retries=5, headers=None, timeout=10, sleep=5):
+        """
+        Method sends request to specified endpoint until number of max_retries is reached
+        For max_retries=5 the request is sent 6 times, since first (or the "zeroth") is understood as proper request.
+
+        :param endpoint: URL of USGS M2M API endpoint
+        :param payload: JSON string of a API payload
+        :param max_retries: default 5 retries
+        :param headers: dict of headers sent to M2M API endpoint
+        :param timeout: default 10 seconds
+        :param sleep: wait seconds between retries, default 5 seconds
+        :return: request response, bytestring of response, can be parsed to JSON
+        :raise M2MAPIRequestTimeout: when limit of max_retries is reached
+        """
+
         if headers is None:
             headers = {}
 
