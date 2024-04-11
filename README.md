@@ -73,7 +73,7 @@ Log is rotated every day at 12:00 AM UTC.
 Powered by [Sanic](https://sanic.dev/en/).
 
 HTTP server acts as a relay between asset link published in STAC catalog and S3 storage.
-Using [awscli](https://du.cesnet.cz/cs/navody/object_storage/cesnet_s3_url_share) the script 
+Using [awscli](https://du.cesnet.cz/cs/navody/object_storage/cesnet_s3_url_share) the script
 generates a temporary link to download selected asset.
 
 ### Prerequisites
@@ -91,17 +91,20 @@ AWS_DEFAULT_OUTPUT=text
 
 #### WARNING
 
-`AWS_DEFAULT_REGION= ` got space after **=**, and it must be there as said [here](https://du.cesnet.cz/cs/navody/object_storage/awscli/start).
+`AWS_DEFAULT_REGION= ` got space after **=**, and it must be there as
+said [here](https://du.cesnet.cz/cs/navody/object_storage/awscli/start).
 
 ### Settings
 
 There is not much what can be changed here. See beginning of **http-server/main.py**.
 
 Lines:
+
 ```python
 host_name = "0.0.0.0"
 server_port = 8080
 ```
+
 could be altered, but I suggest to change settings of the [Docker](#Running) and firewall.
 
 ### Logging
@@ -125,11 +128,14 @@ Package is using Docker. Please see the **./docker-compose.yml**. As can be seen
 two services are executed: **downloader** and **http-server**.
 
 There is not much to change. In fact just the port of **http-server**:
+
 ```docker
 http-server:
     ports:
       - "8080:8080"
 ```
+
+To run the package just install `docker` and run `docker compose up` command.
 
 ## Thanks
 
