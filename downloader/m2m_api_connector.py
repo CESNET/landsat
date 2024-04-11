@@ -24,6 +24,13 @@ class M2MAPIConnector:
         self._login_token(username, token)
 
     def _login_token(self, username=None, token=None):
+        """
+        Method is used for obtaining the M2M API access token using user's username and login token
+
+        :param username: string: users's username
+        :param token: string: users's login token
+        :return: None, the value of M2M API access token is stored in self._api_token
+        """
         if (username is None) or (token is None):
             raise M2MAPICredentialsNotProvided()
 
@@ -47,6 +54,17 @@ class M2MAPIConnector:
             raise M2MAPITokenNotObtainedError()
 
     def _scene_search(self, dataset, geojson, day_start, day_end):
+        """
+        Method prepares M2M API payload dictionary for obtaining the relevant scenes for dataset,
+        polygon, and date range.
+
+        :param dataset: string: name of demanded dataset
+        :param geojson: dictionary representation of GeoJSON polygon
+        :param day_start: datetime: date from which the scenes ought to be demanded
+        :param day_end: datetime: date to which the scenes ought to be demanded
+        :return: dict of scene-search api endpoint (https://m2m.cr.usgs.gov/api/docs/reference/#scene-search)
+        """
+
         api_payload = {
             "maxResults": 10000,
             "datasetName": dataset,
@@ -68,6 +86,15 @@ class M2MAPIConnector:
         return scenes['data']
 
     def _scene_list_add(self, label, datasetName, entity_ids):
+        """
+        Method adds scenest to M2M API scene list defined by label
+
+        :param label: string: label of M2M API scene list into which demandes datasets and entity-ids are added
+        :param datasetName: string: name of demanded dataset
+        :param entity_ids: list of entity_ids
+        :return: None
+        """
+
         api_payload = {
             "listId": label,
             "datasetName": datasetName,
@@ -78,6 +105,13 @@ class M2MAPIConnector:
         self._send_request('scene-list-add', api_payload)
 
     def scene_list_remove(self, label):
+        """
+        Removes scene list defined by label name from M2M API
+
+        :param label: string: name (label) of M2M API scene list
+        :return: None
+        """
+
         api_payload = {
             "listId": label
         }
@@ -85,6 +119,14 @@ class M2MAPIConnector:
         self._send_request('scene-list-remove', api_payload)
 
     def _download_options(self, label, dataset):
+        """
+        Method retrieves download options (mainly URLs and filesizes) from M2M API
+
+        :param label: string: label of the M2M API scene which we are working with
+        :param dataset: dataset for which we are requesting download options
+        :return: list of download options returned from M2M API
+        """
+
         api_payload = {
             "listId": label,
             "datasetName": dataset,
@@ -109,15 +151,34 @@ class M2MAPIConnector:
         return filtered_download_options
 
     def _unique_urls(self, available_urls):
+        """
+        Uniques list of URLs available for downloading. Every URL in list will be in resulting list only once
+        :param available_urls: list of URLs available for downloading. But one URL can be in this list multiple times
+        :return: list of unique available (downloadable) URLs
+        """
+
         unique_urls = list({url_dict['url']: url_dict for url_dict in available_urls}.values())
         return unique_urls
 
     def _download_request(self, download_options):
+        """
+        Method calls download-request M2M API endpoint (https://m2m.cr.usgs.gov/api/docs/reference/#download-request)
+        Method is primarily obtaining URLs that are available for download.
+
+        :param download_options: list of download options retreived by self._download_options()
+        :return: list of unique URLs that are available for downloading
+        """
+
+        # Resulting list of available URLs
         available_urls = []
 
+        # Repeat until break... Well until we won't append any URLs into preparing_urls list. That means that all
+        # available URLs ale appended into available_urls list
         while True:
+            # Some of the URLs may not be ready for downloading yet. Let's store theme somewhere else
             preparing_urls = []
 
+            # for every download-option...
             for download_option in download_options:
                 api_payload = {
                     "downloads": [
@@ -131,6 +192,7 @@ class M2MAPIConnector:
                 response = self._send_request('download-request', api_payload)
                 download_request = json.loads(response)
 
+                # ...append all of its already available URLs into list of available URLs...
                 for available_download in download_request['data']['availableDownloads']:
                     available_urls.append(
                         {
@@ -140,6 +202,7 @@ class M2MAPIConnector:
                         }
                     )
 
+                # ...and URLs that are not available for downloading yet into list of preparing URLs...
                 for preparing_download in download_request['data']['preparingDownloads']:
                     preparing_urls.append(
                         {
@@ -149,13 +212,18 @@ class M2MAPIConnector:
                         }
                     )
 
+            # If we did not append any URLs into preparing_urls list that means we have all possible URLs
+            # in available_urls array, and thus we can break while cycle
             if not preparing_urls:
                 break
 
             time.sleep(5)
 
+        # Some URLs may have been added multiple times. We need to unique the array
         available_urls = self._unique_urls(available_urls)
 
+        # If we have fewer available_urls than download_options then there is some download options for which there
+        # should be URL available without any. Which is odd.
         if len(available_urls) < len(download_options):
             raise M2MAPIDownloadRequestReturnedFewerURLs(
                 entity_ids_count=len(download_options), urls_count=len(available_urls)
@@ -164,6 +232,18 @@ class M2MAPIConnector:
         return available_urls
 
     def _get_list_of_files(self, download_options, entity_display_ids, time_start, time_end, dataset):
+        """
+        Method retrieves list of downloadable URLs from self._download_request and appends displayId, dataset, and
+        date range to those.
+
+        :param download_options: download_options for demanded scenes (obtained by self._download_options)
+        :param entity_display_ids: dictionary of entityIds and corresponding displayId
+        :param time_start:
+        :param time_end:
+        :param dataset: demanded dataset
+        :return: updated list of downloadable URLs
+        """
+
         downloadable_urls = self._download_request(download_options)
 
         for downloadable_url in downloadable_urls:
@@ -179,6 +259,58 @@ class M2MAPIConnector:
         return downloadable_urls
 
     def get_downloadable_files(self, dataset, geojson, time_start, time_end, label="landsat_downloader"):
+        """
+        For specified dataset, geojson, daterange and scene label this method returns a list of downloadable files,
+        and corresponding URLs
+
+        :param dataset: demanded dataset
+        :param geojson: polygon dict
+        :param time_start:
+        :param time_end:
+        :param label: scene label
+        :return: list[dict{}] of downloadable files
+
+        Example returned structure:
+        [
+          {
+            'entityId':'LC91940242024076LGN00',
+            'productId':'632210d4770592cf',
+            'url':'https://dds.cr.usgs.gov/download/eyJpZCI6NjA3Mzg1OTQyLCJjb250YWN0SWQiOjI2ODY2MzY0fQ==',
+            'displayId':'LC09_L2SP_194024_20240316_20240317_02_T2',
+            'dataset':'landsat_ot_c2_l2',
+            'start':datetime.date(2024,3,16),
+            'end':datetime.date(2024,3,16),
+            'geojson':{
+              'type':'Polygon',
+              'coordinates':[
+                [
+                  [
+                    12.09,
+                    48.55
+                  ],
+                  [
+                    18.87,
+                    48.55
+                  ],
+                  [
+                    18.87,
+                    51.06
+                  ],
+                  [
+                    12.09,
+                    51.06
+                  ],
+                  [
+                    12.09,
+                    48.55
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+        """
+
         self.scene_list_remove(label)
 
         scenes = self._scene_search(dataset, geojson, time_start, time_end)
@@ -197,14 +329,24 @@ class M2MAPIConnector:
 
         download_options = self._download_options(label, dataset)
 
-        downloadable_files = self._get_list_of_files(download_options, entity_display_ids, time_start, time_end,
-                                                     dataset)
+        downloadable_files = self._get_list_of_files(
+            download_options, entity_display_ids, time_start, time_end, dataset
+        )
+
         for downloadable_file in downloadable_files:
             downloadable_file.update({'geojson': geojson})
 
         return downloadable_files
 
     def _send_request(self, endpoint, payload_dict=None, max_retries=5):
+        """
+        Method sends HTTP request to specified URL endpoint
+
+        :param endpoint: URL endpoint
+        :param payload_dict: dict that will be converted to request JSON
+        :param max_retries: number of retries, default 5
+        :return: request.response.content
+        """
         if payload_dict is None:
             payload_dict = {}
 

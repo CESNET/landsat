@@ -34,7 +34,10 @@ def setup_logging(current_path):
     :return: nothing
     """
 
-    log_dir = os.path.join(current_path, landsat_config.log_directory)
+    if landsat_config.log_directory[0] == '/':
+        log_dir = Path(landsat_config.log_directory)
+    else:
+        log_dir = os.path.join(current_path, landsat_config.log_directory)
     log_file = os.path.join(str(log_dir), landsat_config.log_name)
 
     Path(str(log_dir)).mkdir(parents=True, exist_ok=True)

@@ -20,3 +20,10 @@ working_directory = "workdir"
 m2m_scene_label = "landsat_downloader_"
 
 s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"
+
+demanded_datasets = [
+    "landsat_ot_c2_l1", "landsat_ot_c2_l2",
+    "landsat_etm_c2_l1", "landsat_etm_c2_l2",
+    "landsat_tm_c2_l1", "landsat_tm_c2_l2",
+    "landsat_mss_c2_l1"
+]

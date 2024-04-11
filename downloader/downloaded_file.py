@@ -21,6 +21,7 @@ import botocore.exceptions
 
 
 class DownloadedFile:
+    # Just a translation table from dataset id to its full name
     _dataset_fullname = {
         "landsat_ot_c2_l1": "Landsat 8-9 OLI/TIRS C2 L1",
         "landsat_ot_c2_l2": "Landsat 8-9 OLI/TIRS C2 L2",
@@ -43,7 +44,10 @@ class DownloadedFile:
     _feature_dict = None
     _feature_id = None
 
+    # True if we want to redownload file eventhough it is already downloaded
     _force_redownload_file = False
+
+    _thread_lock = None
 
     def __init__(
             self,
@@ -54,6 +58,22 @@ class DownloadedFile:
             logger=logging.getLogger("DownloadedFile"),
             thread_lock=None
     ):
+        """
+        Constructor
+
+        :param attributes: dict of attributes of downloaded file which will be used
+            Must include: {
+                displayId, entityId, productId, displayId, url, dataset, start, end, geojson
+            }
+        :param stac_connector: instance of StacConnector which will be used for registering items
+        :param s3_connector: instance of S3Connector into which the file will be downloaded
+        :param workdir: Path to workdir
+        :param s3_download_host: Base URL of S3 download host relay (URL of the computer on which
+            ../http_server/main.py is running)
+        :param logger: logger
+        :param thread_lock: Since instance of DownloadedFile is ran in multiple threads and uses shared resources
+            like the stac_connector or s3_connector, the ThreadLocking is nescessary
+        """
         self._logger = logger
 
         if thread_lock is None:
@@ -92,6 +112,10 @@ class DownloadedFile:
         self.exception_occurred = None
 
     def __del__(self):
+        """
+        Destructor, removes all files this Class has created during its life
+        :return:
+        """
         if self._data_file is not None:
             self._data_file.unlink(missing_ok=True)
 
@@ -110,17 +134,32 @@ class DownloadedFile:
     def get_display_id(self):
         return self._display_id
 
-    def _get_s3_bucket_key_of_attribute(self, attribute):
-        attribute = (
-            str(attribute).  # Attribute
+    def _get_s3_bucket_key_of_file(self, filename):
+        """
+        Method returns corresponding S3 bucket key for given filename
+
+        :param filename: string
+        :return: S3 bucket key corresponding to the given filename
+        """
+        filename = (
+            str(filename).  # Filename
             replace(str(self._workdir), "").  # Remove full workdir path, leave only filename
             replace("\\", "").replace("/", "")  # Also remove any unwanted slashes
         )
-        return f"{self._dataset}/{attribute}"
+
+        # S3 bucket key consist of dataset name and filename
+        return f"{self._dataset}/{filename}"
 
     def process(self):
+        """
+        Basically main method of DownloadedFile class
+        This method downloads the file using self._download_self(), uploads it to S3 storage, creates STAC item and
+        registers it to STAC
+        :return:
+        """
+
         try:
-            # ==================================== DOWNLOADING FILE =======================================================
+            # ============================================ DOWNLOADING FILE ============================================
             file_downloaded = None
             while True:
                 try:
@@ -131,7 +170,7 @@ class DownloadedFile:
                     self._logger.error(e)
                     self._logger.error("Redownloading...")
                     continue
-            # =============================================================================================================
+            # ==========================================================================================================
 
             if file_downloaded:
                 self._untar_metadata()
@@ -139,17 +178,18 @@ class DownloadedFile:
                 # Uploading data file and metadata to S3
                 self._s3_connector.upload_file(
                     local_file=self._data_file,
-                    bucket_key=self._get_s3_bucket_key_of_attribute(self._data_file)
+                    bucket_key=self._get_s3_bucket_key_of_file(self._data_file)
                 )
                 self._s3_connector.upload_file(
                     local_file=self._metadata_xml_file,
-                    bucket_key=self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
+                    bucket_key=self._get_s3_bucket_key_of_file(self._metadata_xml_file)
                 )
 
+                # Uploading angle coefficient file to S3
                 if self._angle_coefficient_file is not None:
                     self._s3_connector.upload_file(
                         local_file=self._angle_coefficient_file,
-                        bucket_key=self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+                        bucket_key=self._get_s3_bucket_key_of_file(self._angle_coefficient_file)
                     )
 
                 # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
@@ -172,7 +212,7 @@ class DownloadedFile:
 
             self._s3_connector.upload_file(
                 local_file=self._feature_json_file,
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_json_file)
+                bucket_key=self._get_s3_bucket_key_of_file(self._feature_json_file)
             )
             self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
             self._save_feature_id()
@@ -194,7 +234,7 @@ class DownloadedFile:
 
         return (
             self._s3_connector.check_if_key_exists(
-                bucket_key=self._get_s3_bucket_key_of_attribute(self._filename),
+                bucket_key=self._get_s3_bucket_key_of_file(self._filename),
                 expected_length=expected_length
             )  # Checks whether the data file itself exists
         )
@@ -221,19 +261,22 @@ class DownloadedFile:
             # Well the file has already been downloaded, so there is no need to download it again and this
             # method cannot succeed in downloading the file that has already been downloaded. Let's return False.
             self._logger.info(
-                f"File {self._get_s3_bucket_key_of_attribute(self._filename)} has been already downloaded."
+                f"File {self._get_s3_bucket_key_of_file(self._filename)} has been already downloaded."
             )
             return False
 
+        # Creating path for datafile
         self._data_file = self._workdir.joinpath(self._filename)
         self._data_file.touch(exist_ok=True)
 
         self._logger.info(f"Downloading {self._url} into {str(self._data_file)}.")
 
+        # Iterating through the content of downloaded file and writing it into self._data_file
         with open(self._data_file, mode='wb') as result_file:
             for chunk in response.iter_content(chunk_size=(1024 * 1024)):
                 result_file.write(chunk)
 
+        # Checking whether the downloaded size is the same as expected size (Content-Length returned by download server)
         expected_size = int(response.headers['Content-Length'])
         real_size = os.stat(str(self._data_file)).st_size
         if expected_size != real_size:
@@ -246,6 +289,10 @@ class DownloadedFile:
         return True
 
     def _untar_metadata(self):
+        """
+        Method untars metadata needed for creating STAC item
+        :return: None
+        """
         metadata_xml = self._display_id + "_MTL.xml"
 
         angle_coefficient_present = True
@@ -268,22 +315,29 @@ class DownloadedFile:
             self._angle_coefficient_file = self._workdir.joinpath(angle_coefficient)
 
     def _download_feature_from_s3(self):
+        """
+        Method downloads XML metadata and angle coefficient (if available) files of already downloaded files
+        from M2M API for regenerating STAC item. Samotný datový soubor není potřeba
+        :return: None
+        """
+
         self._metadata_xml_file = self._workdir.joinpath(f"{self._display_id}_MTL.xml")
         self._s3_connector.download_file(
             self._metadata_xml_file,
-            self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)
+            self._get_s3_bucket_key_of_file(self._metadata_xml_file)
         )
 
         try:
             self._angle_coefficient_file = self._workdir.joinpath(f"{self._display_id}_ANG.txt")
             self._s3_connector.download_file(
                 self._angle_coefficient_file,
-                self._get_s3_bucket_key_of_attribute(self._angle_coefficient_file)
+                self._get_s3_bucket_key_of_file(self._angle_coefficient_file)
             )
         except botocore.exceptions.ClientError as e:
             self._angle_coefficient_file = None
 
         self._data_file = self._workdir.joinpath(f"{self._display_id}.tar")
+
         # Tady se samotný datový soubor nemusí znova z S3 stahovat, stačí jen metadata
         """
         self._s3_connector.download_file(
@@ -293,6 +347,13 @@ class DownloadedFile:
         """
 
     def _dump_stac_feature_into_json(self, feature_dict=None):
+        """
+        Methods creates JSON file from STAC item dictionary
+
+        :param feature_dict: feature_dictionary, if none then using self._feature_dict
+        :return: None, Path to file saved in self._feature_json_file
+        """
+
         if feature_dict is not None:
             self._feature_dict = feature_dict
 
@@ -302,6 +363,13 @@ class DownloadedFile:
             feature_json_file.write(json.dumps(self._feature_dict))
 
     def _stac_item_clear(self, stac_item_dict):
+        """
+        Method removes unnecessary items from STAC item, leaving only XML Metadata asset and DATA asset
+
+        :param stac_item_dict: altered STAC item dictionary
+        :return:
+        """
+
         if 'thumbnail' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('thumbnail')
 
@@ -384,6 +452,13 @@ class DownloadedFile:
             stac_item_dict['assets'].pop('qa')
 
     def _prepare_stac_feature_structure(self):
+        """
+        Method generates STAC item dictionary
+
+        :return: None, method saves STAC item into self._feature_dict
+            and also Path to JSON file into self._feature_json_file
+        """
+
         stac_item_dict = stac_landsat.create_item(str(self._metadata_xml_file)).to_dict(include_self_link=False)
         self._stac_item_clear(stac_item_dict)
 
@@ -391,7 +466,7 @@ class DownloadedFile:
             (
                 self._download_host.scheme,
                 self._download_host.netloc,
-                f"{self._get_s3_bucket_key_of_attribute(self._metadata_xml_file)}",
+                f"{self._get_s3_bucket_key_of_file(self._metadata_xml_file)}",
                 "", ""
             )
         )
@@ -403,7 +478,7 @@ class DownloadedFile:
                         (
                             self._download_host.scheme,
                             self._download_host.netloc,
-                            f"{self._get_s3_bucket_key_of_attribute(self._data_file)}",
+                            f"{self._get_s3_bucket_key_of_file(self._data_file)}",
                             "", ""
                         )
                     ),
@@ -470,6 +545,13 @@ class DownloadedFile:
     """
 
     def _save_feature_id(self):
+        """
+        Method generates self._feature_id_json_file with information about STAC feature id assigned to this file and
+        saves it to S3 storage
+
+        :return: None
+        """
+
         feature_id_json_dict = {
             'displayId': self._display_id,
             'dataset': self._dataset,
@@ -481,5 +563,5 @@ class DownloadedFile:
 
         self._s3_connector.upload_file(
             local_file=self._feature_id_json_file,
-            bucket_key=self._get_s3_bucket_key_of_attribute(self._feature_id_json_file)
+            bucket_key=self._get_s3_bucket_key_of_file(self._feature_id_json_file)
         )

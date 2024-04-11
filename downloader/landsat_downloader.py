@@ -24,18 +24,9 @@ class LandsatDownloader:
     """
     _last_downloaded_day_filename = 'last_downloaded_day.json'
 
-    """
-    Datasets which will be downloaded
-    """
-    _demanded_datasets = [
-        "landsat_ot_c2_l1", "landsat_ot_c2_l2",
-        "landsat_etm_c2_l1", "landsat_etm_c2_l2",
-        "landsat_tm_c2_l1", "landsat_tm_c2_l2",
-        "landsat_mss_c2_l1"
-    ]
-
     def __init__(
             self,
+            demanded_datasets=landsat_config.demanded_datasets,
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
             s3_endpoint=None, s3_access_key=None, s3_secret_key=None, s3_host_bucket=None,
@@ -45,6 +36,7 @@ class LandsatDownloader:
     ):
         """
         __init__
+        :param demanded_datasets: Datasets demanded to download
         :param m2m_username: Username used to log into USGS M2M API
         :param m2m_token: Login token for USGS M2M API (Generated here: https://ers.cr.usgs.gov/)
         :param stac_username: Username used for publishing features into STAC API
@@ -75,6 +67,11 @@ class LandsatDownloader:
         self._feature_download_host = feature_download_host
 
         self._clean_up()
+
+        """
+        Datasets which will be downloaded
+        """
+        self._demanded_datasets = demanded_datasets
 
         if (m2m_username is None) or (m2m_token is None):
             self._m2m_api_connector = M2MAPIConnector(logger=self._logger)

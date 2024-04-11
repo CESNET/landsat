@@ -31,7 +31,10 @@ NOTSET = 0
 
 
 def setup_logging(current_path):
-    log_dir = os.path.join(current_path, log_directory)
+    if log_directory[0] == '/':
+        log_dir = Path(log_directory)
+    else:
+        log_dir = os.path.join(current_path, log_directory)
     log_file = os.path.join(str(log_dir), log_name)
 
     Path(str(log_dir)).mkdir(parents=True, exist_ok=True)
