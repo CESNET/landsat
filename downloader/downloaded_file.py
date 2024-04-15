@@ -427,6 +427,9 @@ class DownloadedFile:
         if 'lwir' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('lwir')
 
+        if 'lwir11' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('lwir11')
+
         if 'atran' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('atran')
 
