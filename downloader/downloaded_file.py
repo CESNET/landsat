@@ -42,6 +42,7 @@ class DownloadedFile:
     _data_file_path = None
     _metadata_xml_file_path = None
     _angle_coefficient_file_path = None
+    _pregenerated_stac_item_file_path = None
     _feature_json_file_path = None
 
     _feature_dict = None
