@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import os
 import tarfile
+
 import requests
 import re
 
@@ -36,10 +37,11 @@ class DownloadedFile:
     _s3_connector: S3Connector
     _workdir: Path
 
-    _data_file = None
-    _metadata_xml_file = None
-    _angle_coefficient_file = None
-    _feature_json_file = None
+    _data_file_path = None
+    _metadata_xml_file_path = None
+    _angle_coefficient_file_path = None
+    _pregenerated_stac_item_file_path = None
+    _feature_json_file_path = None
 
     _feature_dict = None
     _feature_id = None
@@ -71,7 +73,7 @@ class DownloadedFile:
         :param s3_download_host: Base URL of S3 download host relay (URL of the computer on which
             ../http_server/main.py is running)
         :param logger: logger
-        :param thread_lock: Since instance of DownloadedFile is ran in multiple threads and uses shared resources
+        :param thread_lock: Since instance of DownloadedFile is run in multiple threads and uses shared resources
             like the stac_connector or s3_connector, the ThreadLocking is nescessary
         """
         self._logger = logger
@@ -107,7 +109,7 @@ class DownloadedFile:
         self._workdir = workdir
         self._download_host = urlparse(s3_download_host)
 
-        self._feature_id_json_file = self._workdir.joinpath(self._display_id + "_featureId.json")
+        self._feature_id_json_file_path = self._workdir.joinpath(self._display_id + "_featureId.json")
 
         self.exception_occurred = None
 
@@ -116,20 +118,23 @@ class DownloadedFile:
         Destructor, removes all files this Class has created during its life
         :return:
         """
-        if self._data_file is not None:
-            self._data_file.unlink(missing_ok=True)
+        if self._data_file_path is not None:
+            self._data_file_path.unlink(missing_ok=True)
 
-        if self._metadata_xml_file is not None:
-            self._metadata_xml_file.unlink(missing_ok=True)
+        if self._metadata_xml_file_path is not None:
+            self._metadata_xml_file_path.unlink(missing_ok=True)
 
-        if self._angle_coefficient_file is not None:
-            self._angle_coefficient_file.unlink(missing_ok=True)
+        if self._angle_coefficient_file_path is not None:
+            self._angle_coefficient_file_path.unlink(missing_ok=True)
 
-        if self._feature_json_file is not None:
-            self._feature_json_file.unlink(missing_ok=True)
+        if self._pregenerated_stac_item_file_path is not None:
+            self._pregenerated_stac_item_file_path.unlink(missing_ok=True)
 
-        if self._feature_id_json_file is not None:
-            self._feature_id_json_file.unlink(missing_ok=True)
+        if self._feature_json_file_path is not None:
+            self._feature_json_file_path.unlink(missing_ok=True)
+
+        if self._feature_id_json_file_path is not None:
+            self._feature_id_json_file_path.unlink(missing_ok=True)
 
     def get_display_id(self):
         return self._display_id
@@ -175,30 +180,38 @@ class DownloadedFile:
             if file_downloaded:
                 self._untar_metadata()
 
-                # Uploading data file and metadata to S3
+                # Uploading data file to S3
                 self._s3_connector.upload_file(
-                    local_file=self._data_file,
-                    bucket_key=self._get_s3_bucket_key_of_file(self._data_file)
+                    local_file=self._data_file_path,
+                    bucket_key=self._get_s3_bucket_key_of_file(self._data_file_path)
                 )
+
+                # Uploading metadata file to S3
                 self._s3_connector.upload_file(
-                    local_file=self._metadata_xml_file,
-                    bucket_key=self._get_s3_bucket_key_of_file(self._metadata_xml_file)
+                    local_file=self._metadata_xml_file_path,
+                    bucket_key=self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)
                 )
 
                 # Uploading angle coefficient file to S3
-                if self._angle_coefficient_file is not None:
+                if self._angle_coefficient_file_path is not None:
                     self._s3_connector.upload_file(
-                        local_file=self._angle_coefficient_file,
-                        bucket_key=self._get_s3_bucket_key_of_file(self._angle_coefficient_file)
+                        local_file=self._angle_coefficient_file_path,
+                        bucket_key=self._get_s3_bucket_key_of_file(self._angle_coefficient_file_path)
                     )
 
-                # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
-                self._prepare_stac_feature_structure()
+                # Uploading angle coefficient file to S3
+                if self._pregenerated_stac_item_file_path is not None:
+                    self._s3_connector.upload_file(
+                        local_file=self._pregenerated_stac_item_file_path,
+                        bucket_key=self._get_s3_bucket_key_of_file(self._pregenerated_stac_item_file_path)
+                    )
 
             else:
                 # File is already downloaded in S3, just regenerate feature JSON and re-register it
                 try:
                     self._download_feature_from_s3()
+                    self._untar_metadata()
+
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == '404':
                         self._logger.error(e)
@@ -208,11 +221,12 @@ class DownloadedFile:
                         self.process()  # Running again self.process method to process the file again
                         return  # After processing the file again return from this method to prevent never-ending loop
 
-                self._prepare_stac_feature_structure()
+            # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
+            self._prepare_stac_feature_structure()
 
             self._s3_connector.upload_file(
-                local_file=self._feature_json_file,
-                bucket_key=self._get_s3_bucket_key_of_file(self._feature_json_file)
+                local_file=self._feature_json_file_path,
+                bucket_key=self._get_s3_bucket_key_of_file(self._feature_json_file_path)
             )
             self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
             self._save_feature_id()
@@ -266,21 +280,21 @@ class DownloadedFile:
             return False
 
         # Creating path for datafile
-        self._data_file = self._workdir.joinpath(self._filename)
-        self._data_file.touch(exist_ok=True)
+        self._data_file_path = self._workdir.joinpath(self._filename)
+        self._data_file_path.touch(exist_ok=True)
 
-        self._logger.info(f"Downloading {self._url} into {str(self._data_file)}.")
+        self._logger.info(f"Downloading {self._url} into {str(self._data_file_path)}.")
 
         # Iterating through the content of downloaded file and writing it into self._data_file
-        with open(self._data_file, mode='wb') as result_file:
+        with open(self._data_file_path, mode='wb') as result_file:
             for chunk in response.iter_content(chunk_size=(1024 * 1024)):
                 result_file.write(chunk)
 
         # Checking whether the downloaded size is the same as expected size (Content-Length returned by download server)
         expected_size = int(response.headers['Content-Length'])
-        real_size = os.stat(str(self._data_file)).st_size
+        real_size = os.stat(str(self._data_file_path)).st_size
         if expected_size != real_size:
-            self._data_file.unlink(missing_ok=False)
+            self._data_file_path.unlink(missing_ok=False)
             raise DownloadedFileDownloadedFileHasDifferentSize(
                 expected_size=expected_size, real_size=real_size,
                 display_id=self._display_id
@@ -298,7 +312,10 @@ class DownloadedFile:
         angle_coefficient_present = True
         angle_coefficient = self._display_id + "_ANG.txt"
 
-        with tarfile.open(name=self._data_file) as tar:
+        pregenerated_stac_item_present = True
+        pregenerated_stac_item = self._display_id + "_stac.json"
+
+        with tarfile.open(name=self._data_file_path) as tar:
             try:
                 tar.extract(metadata_xml, self._workdir)
             except KeyError:
@@ -309,42 +326,30 @@ class DownloadedFile:
             except KeyError:
                 angle_coefficient_present = False
 
-        self._metadata_xml_file = self._workdir.joinpath(metadata_xml)
+            try:
+                tar.extract(pregenerated_stac_item, self._workdir)
+            except KeyError:
+                pregenerated_stac_item_present = False
+
+        self._metadata_xml_file_path = self._workdir.joinpath(metadata_xml)
 
         if angle_coefficient_present:
-            self._angle_coefficient_file = self._workdir.joinpath(angle_coefficient)
+            self._angle_coefficient_file_path = self._workdir.joinpath(angle_coefficient)
+
+        if pregenerated_stac_item_present:
+            self._pregenerated_stac_item_file_path = self._workdir.joinpath(pregenerated_stac_item)
 
     def _download_feature_from_s3(self):
         """
-        Method downloads XML metadata and angle coefficient (if available) files of already downloaded files
-        from M2M API for regenerating STAC item. Samotný datový soubor není potřeba
+        Method downloads data file from S3
         :return: None
         """
 
-        self._metadata_xml_file = self._workdir.joinpath(f"{self._display_id}_MTL.xml")
+        self._data_file_path = self._workdir.joinpath(f"{self._display_id}.tar")
         self._s3_connector.download_file(
-            self._metadata_xml_file,
-            self._get_s3_bucket_key_of_file(self._metadata_xml_file)
+            self._data_file_path,
+            self._get_s3_bucket_key_of_file(self._data_file_path)
         )
-
-        try:
-            self._angle_coefficient_file = self._workdir.joinpath(f"{self._display_id}_ANG.txt")
-            self._s3_connector.download_file(
-                self._angle_coefficient_file,
-                self._get_s3_bucket_key_of_file(self._angle_coefficient_file)
-            )
-        except botocore.exceptions.ClientError as e:
-            self._angle_coefficient_file = None
-
-        self._data_file = self._workdir.joinpath(f"{self._display_id}.tar")
-
-        # Tady se samotný datový soubor nemusí znova z S3 stahovat, stačí jen metadata
-        """
-        self._s3_connector.download_file(
-            self._data_file,
-            self._get_s3_bucket_key_of_attribute(self._data_file)
-        )
-        """
 
     def _dump_stac_feature_into_json(self, feature_dict=None):
         """
@@ -357,9 +362,9 @@ class DownloadedFile:
         if feature_dict is not None:
             self._feature_dict = feature_dict
 
-        self._feature_json_file = self._workdir.joinpath(self._display_id + "_feature.json")
+        self._feature_json_file_path = self._workdir.joinpath(self._display_id + "_feature.json")
 
-        with open(self._feature_json_file, "w") as feature_json_file:
+        with open(self._feature_json_file_path, "w") as feature_json_file:
             feature_json_file.write(json.dumps(self._feature_dict))
 
     def _stac_item_clear(self, stac_item_dict):
@@ -370,11 +375,18 @@ class DownloadedFile:
         :return:
         """
 
+        stac_item_dict['assets'].clear()
+        stac_item_dict['links'].clear()
+
+        """
         if 'thumbnail' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('thumbnail')
 
         if 'reduced_resolution_browse' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('reduced_resolution_browse')
+
+        if 'index' in stac_item_dict['assets'].keys():
+            stac_item_dict['assets'].pop('mtl.json')
 
         if 'mtl.json' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('mtl.json')
@@ -453,6 +465,7 @@ class DownloadedFile:
 
         if 'qa' in stac_item_dict['assets'].keys():
             stac_item_dict['assets'].pop('qa')
+        """
 
     def _prepare_stac_feature_structure(self):
         """
@@ -462,30 +475,46 @@ class DownloadedFile:
             and also Path to JSON file into self._feature_json_file
         """
 
-        stac_item_dict = stac_landsat.create_item(str(self._metadata_xml_file)).to_dict(include_self_link=False)
-        self._stac_item_clear(stac_item_dict)
+        try:
+            self._logger.info("Trying to generate STAC item using stactools.")
+            stac_item_dict = (stac_landsat.create_item(str(self._metadata_xml_file_path))
+                              .to_dict(include_self_link=False))
 
-        stac_item_dict['assets']['mtl.xml']['href'] = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                f"{self._get_s3_bucket_key_of_file(self._metadata_xml_file)}",
-                "", ""
-            )
-        )
+        except Exception as stactools_exception:
+            self._logger.info("stactools were unable to create STAC item, using pre-generated STAC item.")
+            if self._pregenerated_stac_item_file_path is not None:
+                with open(self._pregenerated_stac_item_file_path, 'r') as pregenerated_stac_item_file:
+                    stac_item_dict = json.loads(pregenerated_stac_item_file.read())
+            else:
+                raise DownloadedFileCannotCreateStacItem(
+                    f"Unable to create STAC item. stactools.landsat exception: {str(stactools_exception)}, " +
+                    f"pregenerated STAC item does not exists!"
+                )
+
+        self._stac_item_clear(stac_item_dict)
 
         stac_item_dict['assets'].update(
             {
+                'mtl.xml': {
+                    'href': urlunsplit(
+                        (
+                            self._download_host.scheme,
+                            self._download_host.netloc,
+                            f"{self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)}",
+                            "", ""
+                        )
+                    )
+                },
                 'data': {
                     'href': urlunsplit(
                         (
                             self._download_host.scheme,
                             self._download_host.netloc,
-                            f"{self._get_s3_bucket_key_of_file(self._data_file)}",
+                            f"{self._get_s3_bucket_key_of_file(self._data_file_path)}",
                             "", ""
                         )
                     ),
-                    'type': mimetypes.guess_type(str(self._data_file))[0],
+                    'type': mimetypes.guess_type(str(self._data_file_path))[0],
                     'title': self._dataset_fullname[self._dataset],
                     'description': f"{self._dataset_fullname[self._dataset]} full data tarball."
                 }
@@ -505,48 +534,6 @@ class DownloadedFile:
         }
         self._dump_stac_feature_into_json()
 
-    """
-    def _update_json_feature(self):
-        # TODO tahle metoda by už neměla být potřeba
-        with open(self._feature_json_file, "r") as feature_json_file:
-            self._feature_dict = json.load(feature_json_file)
-
-        metadata_txt_href = urlparse(self._feature_dict['features'][0]['assets']['mtl.txt']['href'])
-        metadata_txt_href = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                metadata_txt_href.path.strip('/'),
-                "", ""
-            )
-        )
-        self._feature_dict['features'][0]['assets']['mtl.txt']['href'] = metadata_txt_href
-
-        metadata_xml_href = urlparse(self._feature_dict['features'][0]['assets']['mtl.xml']['href'])
-        metadata_xml_href = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                metadata_xml_href.path.strip('/'),
-                "", ""
-            )
-        )
-        self._feature_dict['features'][0]['assets']['mtl.xml']['href'] = metadata_xml_href
-
-        data_href = urlparse(self._feature_dict['features'][0]['assets']['data']['href'])
-        data_href = urlunsplit(
-            (
-                self._download_host.scheme,
-                self._download_host.netloc,
-                data_href.path.strip('/'),
-                "", ""
-            )
-        )
-        self._feature_dict['features'][0]['assets']['data']['href'] = data_href
-
-        self._dump_stac_feature_into_json()
-    """
-
     def _save_feature_id(self):
         """
         Method generates self._feature_id_json_file with information about STAC feature id assigned to this file and
@@ -561,10 +548,10 @@ class DownloadedFile:
             'featureId': self._feature_id
         }
 
-        with open(self._feature_id_json_file, "w") as feature_id_json_file:
+        with open(self._feature_id_json_file_path, "w") as feature_id_json_file:
             feature_id_json_file.write(json.dumps(feature_id_json_dict))
 
         self._s3_connector.upload_file(
-            local_file=self._feature_id_json_file,
-            bucket_key=self._get_s3_bucket_key_of_file(self._feature_id_json_file)
+            local_file=self._feature_id_json_file_path,
+            bucket_key=self._get_s3_bucket_key_of_file(self._feature_id_json_file_path)
         )

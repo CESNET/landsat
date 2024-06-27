@@ -388,13 +388,18 @@ class M2MAPIConnector:
 
         retry = 0
         while max_retries > retry:
-            self._logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
+            if 'login' in endpoint:
+                payload_to_log = '=== Contains secret, not logged! ==='
+            else:
+                payload_to_log = payload
+
+            self._logger.info(f"Sending request to URL {endpoint}. Retry: {retry}. Payload: {payload_to_log}")
             try:
                 response = requests.post(endpoint, payload, headers=headers, timeout=timeout)
                 return response
 
             except requests.exceptions.Timeout:
-                self._logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+                self._logger.warning(f"Connection timeout. Retry number {retry} of {max_retries}.")
 
                 retry += 1
                 sleep = (1 + random.random()) * sleep

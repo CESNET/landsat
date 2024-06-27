@@ -62,3 +62,8 @@ class DownloadedFileDoesNotContainMetadata(DownloadedFileError):
 class DownloadedFileThreadLockNotSet(DownloadedFileError):
     def __init__(self, message="Thread lock is not set!", display_id=None):
         super().__init__(message=message, display_id=display_id)
+
+
+class DownloadedFileCannotCreateStacItem(DownloadedFileError):
+    def __init__(self, message="Unable to create STAC item!", display_id=None):
+        super().__init__(message=message, display_id=display_id)
