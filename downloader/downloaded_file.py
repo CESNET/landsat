@@ -3,7 +3,6 @@ import logging
 import mimetypes
 import os
 import tarfile
-import time
 
 import requests
 import re
@@ -11,7 +10,6 @@ import re
 from urllib.parse import urlparse, urlunsplit
 from pathlib import Path
 
-import stactools.landsat.mtl_metadata
 from stactools.landsat import stac as stac_landsat
 
 from stac_connector import STACConnector
@@ -75,7 +73,7 @@ class DownloadedFile:
         :param s3_download_host: Base URL of S3 download host relay (URL of the computer on which
             ../http_server/main.py is running)
         :param logger: logger
-        :param thread_lock: Since instance of DownloadedFile is ran in multiple threads and uses shared resources
+        :param thread_lock: Since instance of DownloadedFile is run in multiple threads and uses shared resources
             like the stac_connector or s3_connector, the ThreadLocking is nescessary
         """
         self._logger = logger
