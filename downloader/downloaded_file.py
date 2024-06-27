@@ -482,10 +482,16 @@ class DownloadedFile:
             stac_item_dict = (stac_landsat.create_item(str(self._metadata_xml_file_path))
                               .to_dict(include_self_link=False))
 
-        except Exception:
+        except Exception as stactools_exception:
             self._logger.info("stactools were unable to create STAC item, using pre-generated STAC item.")
-            with open(self._pregenerated_stac_item_file_path, 'r') as pregenerated_stac_item_file:
-                stac_item_dict = json.loads(pregenerated_stac_item_file.read())
+            if self._pregenerated_stac_item_file_path is not None:
+                with open(self._pregenerated_stac_item_file_path, 'r') as pregenerated_stac_item_file:
+                    stac_item_dict = json.loads(pregenerated_stac_item_file.read())
+            else:
+                raise DownloadedFileCannotCreateStacItem(
+                    f"Unable to create STAC item. stactools.landsat exception: {str(stactools_exception)}, " +
+                    f"pregenerated STAC item does not exists!"
+                )
 
         self._stac_item_clear(stac_item_dict)
 
