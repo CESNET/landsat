@@ -19,7 +19,7 @@ working_directory = "workdir"
 
 m2m_scene_label = "landsat_downloader_"
 
-### When changing port it must be reflected in http_server/docker-compose.yml!
+# When changing port it must be reflected in http_server/docker-compose.yml!
 s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"
 
 demanded_datasets = [
