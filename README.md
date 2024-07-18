@@ -105,7 +105,7 @@ host_name = "0.0.0.0"
 server_port = 8080
 ```
 
-could be altered, but I suggest to change settings of the [Docker](#Running) and firewall.
+could be altered, but I recommend to change settings of the [Docker](#Running) and firewall.
 
 ### Logging
 
@@ -124,10 +124,10 @@ Log is rotated every day at 12:00 AM UTC.
 
 ## Running
 
-Package is using Docker. Please see the **./docker-compose.yml**. As can be seen there,
-two services are executed: **downloader** and **http-server**.
+Package is using Docker. Please see the corresponding **docker-compose.yml** files for [downloader](#downloader) 
+and [http-server](#http-server).
 
-There is not much to change. In fact just the port of **http-server**:
+There is not much to change. In fact just the port of **http-server** in :
 
 ```docker
 http-server:
@@ -135,7 +135,17 @@ http-server:
       - "8080:8080"
 ```
 
-To run the package just install `docker` and run `docker compose up` command.
+To run the package just install `docker` and run `docker compose up` command in both directories.
+
+So to run the **downloader** in folder `landsat/downloader` execute:
+```bash
+docker compose up
+```
+
+and do the same in folder `landsat/http-server` to execute **http-server**.
+
+There is also prepared a little script to run both of these docker containers, but I strongly recommend to run those 
+commands inside separate [`screen`](https://en.wikipedia.org/wiki/GNU_Screen) consoles. 
 
 ## Thanks
 

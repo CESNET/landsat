@@ -1,0 +1,7 @@
+services:
+  downloader:
+    build: ./
+    volumes:
+      - type: bind
+        source: ./
+        target: /app

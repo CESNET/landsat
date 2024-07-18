@@ -39,7 +39,7 @@ class STACConnector:
 
         headers = {}
 
-        if (endpoint != 'auth'):
+        if endpoint != 'auth':
             if self._api_token_valid_until < datetime.datetime.utcnow():
                 self._login(username=self._username, password=self._password)
 
@@ -61,7 +61,7 @@ class STACConnector:
 
         retry = 0
         while max_retries > retry:
-            self._logger.info('Sending request to URL {}. Retry: {}.'.format(endpoint, retry))
+            self._logger.info(f'Sending request to URL {endpoint}. Retry: {retry}.')
             try:
                 if 'auth' in endpoint:
                     response = requests.get(endpoint, auth=(payload_dict['username'], payload_dict['password']))
@@ -72,7 +72,7 @@ class STACConnector:
                 return response
 
             except requests.exceptions.Timeout:
-                self._logger.warning('Connection timeout. Retry number {} of {}.'.format(retry, max_retries))
+                self._logger.warning(f'Connection timeout. Retry number {retry} of {max_retries}.')
 
                 retry += 1
                 sleep = (1 + random.random()) * sleep

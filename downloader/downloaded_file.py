@@ -481,7 +481,7 @@ class DownloadedFile:
                               .to_dict(include_self_link=False))
 
         except Exception as stactools_exception:
-            self._logger.info("stactools were unable to create STAC item, using pre-generated STAC item.")
+            self._logger.warning("stactools were unable to create STAC item, using pre-generated STAC item.")
             if self._pregenerated_stac_item_file_path is not None:
                 with open(self._pregenerated_stac_item_file_path, 'r') as pregenerated_stac_item_file:
                     stac_item_dict = json.loads(pregenerated_stac_item_file.read())

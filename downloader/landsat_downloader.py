@@ -50,7 +50,7 @@ class LandsatDownloader:
         :param logger:
         :param feature_download_host: URL of a host on which the http_server script is running
         """
-        logger.info("=== DOWNLOADER INITIALIZING ===")
+        logger.debug("=== DOWNLOADER INITIALIZING ===")
 
         if root_directory is None:
             raise Exception("root_directory must be specified")
@@ -111,11 +111,11 @@ class LandsatDownloader:
         """
 
         import shutil
-        self._logger.info(f"Initial cleanup: Deleting {self._workdir}")
+        self._logger.debug(f"Initial cleanup: Deleting {self._workdir}")
         # self._workdir.unlink(missing_ok=True) # Does not work, returns WinError 5: Access Denied
         shutil.rmtree(self._workdir, ignore_errors=True)
 
-        self._logger.info(f"Initial cleanup: Creating directory {self._workdir}")
+        self._logger.debug(f"Initial cleanup: Creating directory {self._workdir}")
         self._workdir.mkdir(parents=True, exist_ok=True)
 
     def _get_last_downloaded_day(self):

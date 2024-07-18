@@ -67,7 +67,7 @@ if __name__ == '__main__':
     setup_logging(root_dir)
 
     try:
-        logger.info("=== LANDSAT DOWNLOADER STARTING ===")
+        logger.debug("=== LANDSAT DOWNLOADER STARTING ===")
 
         landsat_downloader = None
         while landsat_downloader is None:

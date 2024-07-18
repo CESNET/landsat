@@ -114,7 +114,7 @@ class S3Connector:
                 return True
             else:
                 # ...but does not have the right size. Let's delete this key and download it again.
-                self._logger.info(
+                self._logger.warning(
                     f"Key {bucket_key} length ({expected_length} b) does not match length returned " +
                     f"by M2M API ({key_head['ContentLength']} b)"
                 )
