@@ -135,18 +135,20 @@ http-server:
       - "8080:8080"
 ```
 
-To run the package just install `docker` and run `docker compose up` command in both directories.
+To run the package just install `docker` and run `docker compose up -d` command in both directories.
 
 So to run the **downloader** in folder `landsat/downloader` execute:
 ```bash
-docker compose up
+docker compose up -d
 ```
 
 and do the same in folder `landsat/http-server` to execute **http-server**.
 
-There is also prepared a little script to run both of these docker containers, but I strongly recommend to run those 
-commands inside separate [`screen`](https://en.wikipedia.org/wiki/GNU_Screen) consoles. 
+There is also prepared a little script to run both of these docker containers.
+
+Also in both **docker-compose.yml** files there are flags `restart: unless-stopped`, and thus after rebooting the 
+machine, scripts will restart automatically.
 
 ## Thanks
 
-Using [m2m-api](https://github.com/Fergui/m2m-api) by Angel Farguell licensed under MIT License. Many thanks!
+Using [m2m-api](https://github.com/Fergui/m2m-api) sources by Angel Farguell licensed under MIT License. Many thanks!
