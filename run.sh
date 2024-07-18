@@ -1,4 +1,4 @@
 #!/bin/bash
 
-bash docker compose up -f ./downloader/docker-compose.yml -d &
-bash docker compose up -f ./http-server/docker-compose.yml -d &
+docker compose -f ./downloader/docker-compose.yml up -d &
+docker compose -f ./http_server/docker-compose.yml up -d &
