@@ -5,3 +5,4 @@ services:
       - type: bind
         source: ./
         target: /app
+    restart: unless-stopped
