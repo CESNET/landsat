@@ -28,3 +28,19 @@ demanded_datasets = [
     "landsat_tm_c2_l1", "landsat_tm_c2_l2",
     "landsat_mss_c2_l1"
 ]
+
+"""
+catalogue_only variable specifies whether we want to download file from USGS M2M API.
+True: script will download only files that has not been downloaded from USGS M2M API,
+    script won't re-download already downloaded data for example if the size has changed.
+False: script will check every file (even downloaded ones) against USGS M2M API, 
+    and will redownload all of them for example if size has changed
+"""
+catalogue_only = False
+
+"""
+force_redownload_file variable specifies whether we want to download file everytime 
+True: if the file has already been downloaded, we will overwrite it anyway
+False: the new file will be downloaded only if new file differs for example in size
+"""
+force_redownload_file = False

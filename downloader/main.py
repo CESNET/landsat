@@ -13,7 +13,7 @@ import config.landsat_config as landsat_config
 from landsat_downloader import LandsatDownloader
 
 
-def exception_wait(sleep_time=(60 * 60)):
+def exception_wait(sleep_time=(30 * 60)):
     """
     Function waits for specified time period (seconds)
     Logs critical since this function is meant to be called only when exception is raised

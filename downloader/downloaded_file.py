@@ -46,6 +46,9 @@ class DownloadedFile:
     _feature_dict = None
     _feature_id = None
 
+    # False if we want to for exapmle check size of already downloaded files against M2M API
+    _catalogue_only = False
+
     # True if we want to redownload file eventhough it is already downloaded
     _force_redownload_file = False
 
@@ -58,7 +61,9 @@ class DownloadedFile:
             workdir=None,
             s3_download_host=landsat_config.s3_download_host,
             logger=logging.getLogger("DownloadedFile"),
-            thread_lock=None
+            thread_lock=None,
+            catalogue_only=landsat_config.catalogue_only,
+            force_redownload_file=landsat_config.force_redownload_file
     ):
         """
         Constructor
@@ -102,6 +107,9 @@ class DownloadedFile:
         self._date_start = attributes['start']
         self._date_end = attributes['end']
         self._geojson = attributes['geojson']
+
+        self._catalogue_only = catalogue_only
+        self._force_redownload_file = force_redownload_file
 
         self._stac_connector = stac_connector
         self._s3_connector = s3_connector
@@ -293,7 +301,8 @@ class DownloadedFile:
         # Checking whether the downloaded size is the same as expected size (Content-Length returned by download server)
         expected_size = int(response.headers['Content-Length'])
         real_size = os.stat(str(self._data_file_path)).st_size
-        if expected_size != real_size:
+
+        if (not self._catalogue_only) and (expected_size != real_size):
             self._data_file_path.unlink(missing_ok=False)
             raise DownloadedFileDownloadedFileHasDifferentSize(
                 expected_size=expected_size, real_size=real_size,
