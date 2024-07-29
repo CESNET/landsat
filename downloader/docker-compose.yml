@@ -1,5 +1,5 @@
 services:
-  downloader:
+  landsat-downloader:
     build: ./
     volumes:
       - type: bind

@@ -1,5 +1,5 @@
 services:
-  http-server:
+  landsat-http-server:
     build: ./
     volumes:
       - ./:/app
