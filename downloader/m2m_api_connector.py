@@ -145,6 +145,8 @@ class M2MAPIConnector:
         for download_option in download_options['data']:
             if download_option['downloadSystem'] == 'dds' and download_option['available'] == True:
                 filtered_download_options.append(download_option)
+            elif download_option['downloadSystem'] == 'dds_ms' and download_option['available'] == True:
+                filtered_download_options.append(download_option)
             elif download_option['downloadSystem'] == 'ls_zip' and download_option['available'] == True:
                 filtered_download_options.append(download_option)
 
