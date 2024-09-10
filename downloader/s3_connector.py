@@ -85,7 +85,7 @@ class S3Connector:
         self._logger.info(f"Deleting S3 key={bucket_key}.")
         self.s3_client.delete_object(Bucket=self.bucket, Key=bucket_key)
 
-    def check_if_key_exists(self, bucket_key, expected_length):
+    def check_if_key_exists(self, bucket_key, expected_length=None):
         """
         Method checks whether this file already exists on S3 storage.
 

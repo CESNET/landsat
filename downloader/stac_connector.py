@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-import os
 import random
 import time
 import requests
@@ -158,7 +157,11 @@ class STACConnector:
 
         if 'ErrorCode' in feature_id.keys():
             if feature_id['ErrorCode'] == 409:
-                feature_id = self.update_stac_item(json_dict, collection, feature_id['ErrorMessage'].split(' ')[1])
+                feature_id = self.update_stac_item(
+                    json_dict,
+                    collection,
+                    feature_id['ErrorMessage'].split(' ')[1]
+                )
             else:
                 raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
 
@@ -204,13 +207,14 @@ class STACConnector:
             'Authorization': 'Bearer ' + self._stac_token
         }
 
-        # TODO check jestli vrátilo HTTP/200-OK
-        response = requests.put(
-            url=self._stac_base_url + '/collections' + '/' + dataset + '/items' + '/' + feature_id,
-            headers=headers,
-            data=json.dumps(json_dict)
+        response = self._send_request(
+            endpoint=f"/collections/{dataset}/items/{feature_id}",
+            payload_dict=json_dict, headers=headers, method=Method.PUT,
         )
 
-        response = json.loads(response.content)
+        response = json.loads(response)
+        if response['status'] != "success":
+            raise STACRequestNotOK(f"STAC Update Request not OK for feature {feature_id}!")
 
+        feature_id = response['message'].split(' ')[-1]
         return feature_id

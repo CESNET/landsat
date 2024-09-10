@@ -13,7 +13,6 @@ import re
 from urllib.parse import urlparse, urlunsplit
 from pathlib import Path
 from PIL import Image
-from skimage import exposure
 
 from stactools.landsat import stac as stac_landsat
 
@@ -203,8 +202,8 @@ class DownloadedFile:
             self._create_feature()
 
             # Generating thumbnail
-            self._generate_thumbnail()
-            self._upload_thumbnail_to_s3()
+            if self._generate_thumbnail():
+                self._upload_thumbnail_to_s3()
 
             # Adding assests (data, metadata, thumbnail...) to feature
             self._append_assets_to_feature()
@@ -476,58 +475,43 @@ class DownloadedFile:
             bucket_key=self._get_s3_bucket_key_of_file(self._feature_id_json_file_path)
         )
 
-    @staticmethod
-    def _normalize(array):
-        array_min, array_max = array.min(), array.max()
-        return (array - array_min) / (array_max - array_min)
+    def _combine_tifs(self, red_path, green_path, blue_path, size=None):
+        from utils.thumbnail_generation import normalize, linear_stretch, gamma_correction, replace_tif_to_jpg
 
-    @staticmethod
-    def _linear_stretch(array, p_low=2, p_high=98):
-        p2, p98 = np.percentile(array, (p_low, p_high))
-        return exposure.rescale_intensity(array, in_range=(p2, p98))
-
-    @staticmethod
-    def _gamma_correction(image, gamma=1.0):
-        return np.power(image, gamma)
-
-    @staticmethod
-    def _replace_tif_to_jpg(filename):
-        return (
-            filename
-            .replace('.tif', '.jpg')
-            .replace('.TIF', '.jpg')
-            .replace('.tiff', '.jpg')
-            .replace('.TIFF', '.jpg')
-        )
-
-    def _combine_tifs(self, red_path, green_path, blue_path, out_path, size=None):
-        self._logger.info(f"Combining bands into thumbnail {out_path}.")
+        self._logger.info(f"Combining bands into thumbnail {self._thumbnail_file_path}.")
 
         red = rasterio.open(red_path).read(1)
         green = rasterio.open(green_path).read(1)
         blue = rasterio.open(blue_path).read(1)
 
-        red = self._normalize(red)
-        green = self._normalize(green)
-        blue = self._normalize(blue)
+        red = normalize(red)
+        green = normalize(green)
+        blue = normalize(blue)
 
-        red = self._linear_stretch(red)
-        green = self._linear_stretch(green)
-        blue = self._linear_stretch(blue)
+        red = linear_stretch(red)
+        green = linear_stretch(green)
+        blue = linear_stretch(blue)
 
         rgb = np.dstack((red, green, blue))
-        rgb = self._gamma_correction(rgb, gamma=0.8)
+        rgb = gamma_correction(rgb, gamma=0.8)
 
         image = Image.fromarray((rgb * 255).astype(np.uint8))
         if size is not None:
             image = image.resize(size, Image.Resampling.LANCZOS)
 
-        out_path = Path(self._replace_tif_to_jpg(str(out_path)))
-        image.save(out_path, 'JPEG', quality=90)
+        self._thumbnail_file_path = Path(replace_tif_to_jpg(str(self._thumbnail_file_path)))
+        image.save(self._thumbnail_file_path, 'JPEG', quality=90)
 
-        return out_path
+    def _generate_thumbnail(self, size=(1000, 1000)):
+        """
+        Method generates thumbnail image
+        :return: True if thumbnail was generated, False if it was not (f.x. thumbnail has been generated already)
+        """
+        self._thumbnail_file_path = self._workdir.joinpath(f"{self._display_id}_thumbnail.jpg")
+        if self._s3_connector.check_if_key_exists(self._get_s3_bucket_key_of_file(self._thumbnail_file_path)):
+            self._logger.info(f"Thumbnail already exists for {self._dataset}/{self._display_id}, skipping generation.")
+            return False
 
-    def _generate_thumbnail(self):
         with tarfile.open(self._data_file_path, mode='r') as tar:
             blue_tif_filename = None
             green_tif_filename = None
@@ -599,8 +583,6 @@ class DownloadedFile:
                 case _:
                     raise ValueError(f"Unexpected dataset {self._dataset}!")
 
-            output_filename = f"{self._display_id}_thumbnail.jpg"
-
             if blue_tif_filename and green_tif_filename and red_tif_filename:
                 tar.extract(blue_tif_filename, path=self._workdir)
                 blue_tif_path = self._workdir.joinpath(blue_tif_filename)
@@ -609,12 +591,11 @@ class DownloadedFile:
                 tar.extract(red_tif_filename, path=self._workdir)
                 red_tif_path = self._workdir.joinpath(red_tif_filename)
 
-                output_path = self._combine_tifs(
+                self._combine_tifs(
                     red_path=red_tif_path,
                     green_path=green_tif_path,
                     blue_path=blue_tif_path,
-                    out_path=self._workdir.joinpath(output_filename),
-                    size=(1000, 1000)
+                    size=size
                 )
 
             elif green_tif_filename and red_tif_filename and nir_tif_filename:
@@ -625,15 +606,14 @@ class DownloadedFile:
                 tar.extract(nir_tif_filename, path=self._workdir)
                 nir_tif_path = self._workdir.joinpath(nir_tif_filename)
 
-                output_path = self._combine_tifs(
+                self._combine_tifs(
                     red_path=red_tif_path,
                     green_path=green_tif_path,
                     blue_path=nir_tif_path,
-                    out_path=self._workdir.joinpath(output_filename),
-                    size=(1000, 1000)
+                    size=size
                 )
 
             else:
                 raise ValueError(f"Thumbnail suitable data not found!")
 
-        self._thumbnail_file_path = output_path
+        return True
