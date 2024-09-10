@@ -66,7 +66,7 @@ class S3Connector:
         :return: nothing
         :raise: botocore.exceptions.ClientError
         """
-        self._logger.info(f"Downloading key={bucket_key} into file={str(path_to_download)}.")
+        self._logger.info(f"Downloading S3 key={bucket_key} into file={str(path_to_download)}.")
 
         try:
             with open(path_to_download, 'wb') as downloaded_file:
@@ -115,7 +115,7 @@ class S3Connector:
             else:
                 # ...but does not have the right size. Let's delete this key and download it again.
                 self._logger.warning(
-                    f"Key {bucket_key} length ({expected_length} b) does not match length returned " +
+                    f"S3 key {bucket_key} length ({expected_length} b) does not match length returned " +
                     f"by M2M API ({key_head['ContentLength']} b)"
                 )
                 self.delete_key(bucket_key)

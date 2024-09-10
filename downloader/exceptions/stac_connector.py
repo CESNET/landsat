@@ -37,3 +37,9 @@ class STACRequestNotOK(STACConnectorError):
             self.message = message
 
         super().__init__(self.message)
+
+
+class STACRequestMethodNotProvided(STACConnectorError):
+    def __init__(self, message="Method not provided for STAC Request!"):
+        self.message = message
+        super().__init__(self.message)

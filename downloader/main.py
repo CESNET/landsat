@@ -74,7 +74,6 @@ if __name__ == '__main__':
             try:
                 # Initializing instance of LandsatDownloader, passing root and
                 landsat_downloader = LandsatDownloader(
-                    root_directory=root_dir,
                     logger=logger
                 )
             except Exception as e:

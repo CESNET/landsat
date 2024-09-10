@@ -15,8 +15,6 @@ log_name = "landsat.log"
 log_level = 20
 log_logger = "LandsatLogger"
 
-working_directory = "workdir"
-
 m2m_scene_label = "landsat_downloader_"
 
 # When changing port it must be reflected in http_server/docker-compose.yml!
