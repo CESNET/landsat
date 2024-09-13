@@ -221,7 +221,6 @@ class LandsatDownloader:
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=scene_label
                     )
 
-                    thread_lock = threading.Lock()
                     downloaded_files = []
                     for downloadable_file_attributes in downloadable_files_attributes:
                         downloaded_files.append(
@@ -229,8 +228,7 @@ class LandsatDownloader:
                                 attributes=downloadable_file_attributes,
                                 stac_connector=self._stac_connector,
                                 s3_connector=self._s3_connector,
-                                logger=self._logger,
-                                thread_lock=thread_lock
+                                logger=self._logger
                             )
                         )
 

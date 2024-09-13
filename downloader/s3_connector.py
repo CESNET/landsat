@@ -1,9 +1,11 @@
 import boto3
+import io
 import logging
 
 import botocore.exceptions
 
 import config.s3_config as s3_config
+from downloader.exceptions.s3_connector import S3KeyNotSpecified, S3KeyDoesNotExist
 
 """
 Create file ./config/s3_config.py with following content:
@@ -13,6 +15,43 @@ access_key = "your_access_key_should_go_here"
 secret_key = "your_secret_key_should_go_here"
 host_bucket = "landsat"
 """
+
+
+class S3File(io.BytesIO):
+    def __init__(self, bucket_name, key_name, s3client):
+        super().__init__()
+        self.bucket_name = bucket_name
+        self.key_name = key_name
+        self.s3client = s3client
+        self.offset = 0
+        self.total_download = 0
+
+    def close(self):
+        return
+
+    def read(self, size):
+        self.total_download += size
+        #print('read: offset = {}, size = {}, total download = {}'.format(self.offset, size, self.total_download))
+
+        start = self.offset
+        end = self.offset + size - 1
+        try:
+            s3_object = self.s3client.get_object(
+                Bucket=self.bucket_name, Key=self.key_name, Range="bytes=%d-%d" % (start, end)
+            )
+        except:
+            return bytearray()
+        self.offset = self.offset + size
+        result = s3_object['Body'].read()
+        return result
+
+    def seek(self, offset, whence=0):
+        if whence == 0:
+            #print('seek: offset {} -> {} (diff = {} kB)'.format(self.offset, offset, (offset - self.offset) // 1000))
+            self.offset = offset
+
+    def tell(self):
+        return self.offset
 
 
 class S3Connector:
@@ -36,13 +75,13 @@ class S3Connector:
         :param host_bucket:
         """
         self._logger = logger
-        self.s3_client = boto3.client(
+        self._s3_client = boto3.client(
             service_name=service_name,
             endpoint_url=s3_endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
         )
-        self.bucket = host_bucket
+        self._bucket = host_bucket
 
     def upload_file(self, local_file, bucket_key):
         """
@@ -55,7 +94,7 @@ class S3Connector:
 
         local_file = str(local_file)
         self._logger.info(f"Uploading file={local_file} to S3 as key={bucket_key}.")
-        self.s3_client.upload_file(local_file, self.bucket, bucket_key)
+        self._s3_client.upload_file(local_file, self._bucket, bucket_key)
 
     def download_file(self, path_to_download, bucket_key):
         """
@@ -70,7 +109,7 @@ class S3Connector:
 
         try:
             with open(path_to_download, 'wb') as downloaded_file:
-                self.s3_client.download_fileobj(self.bucket, bucket_key, downloaded_file)
+                self._s3_client.download_fileobj(self._bucket, bucket_key, downloaded_file)
 
         except botocore.exceptions.ClientError as e:
             raise e
@@ -83,7 +122,7 @@ class S3Connector:
         :return: nothing
         """
         self._logger.info(f"Deleting S3 key={bucket_key}.")
-        self.s3_client.delete_object(Bucket=self.bucket, Key=bucket_key)
+        self._s3_client.delete_object(Bucket=self._bucket, Key=bucket_key)
 
     def check_if_key_exists(self, bucket_key, expected_length=None):
         """
@@ -96,7 +135,7 @@ class S3Connector:
         """
 
         try:
-            key_head = self.s3_client.head_object(Bucket=self.bucket, Key=bucket_key)
+            key_head = self._s3_client.head_object(Bucket=self._bucket, Key=bucket_key)
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == "404":
                 # File/key does not exist
@@ -123,3 +162,12 @@ class S3Connector:
         else:
             # We do not have to check sizes, file exists and that's enough
             return True
+
+    def get_s3_file_reference(self, file_key=None):
+        if file_key is None:
+            raise S3KeyNotSpecified()
+
+        if not self.check_if_key_exists(bucket_key=file_key):
+            raise S3KeyDoesNotExist(key=file_key)
+
+        return S3File(bucket_name=self._bucket, key_name=file_key, s3client=self._s3_client)

@@ -67,3 +67,8 @@ class DownloadedFileThreadLockNotSet(DownloadedFileError):
 class DownloadedFileCannotCreateStacItem(DownloadedFileError):
     def __init__(self, message="Unable to create STAC item!", display_id=None):
         super().__init__(message=message, display_id=display_id)
+
+
+class DownloadedFileFilenameToUntarNotSpecified(DownloadedFileError):
+    def __init__(self, message="Filename to be extracted from tar archive not specified!", display_id=None):
+        super().__init__(message=message, display_id=display_id)
