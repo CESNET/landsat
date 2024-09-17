@@ -170,9 +170,13 @@ class DownloadedFile:
                 # File should already be downloaded in S3, just regenerate feature JSON and re-register it
                 try:
                     # self._download_feature_from_s3() ## No need to download, we'll work directly from S3
-                    self._data_file_path = self._s3_connector.get_s3_file_reference(
-                        file_key=self._get_s3_bucket_key_of_file(self._workdir.joinpath(f"{self._display_id}.tar"))
-                    )
+                    self._data_file_path = self._workdir.joinpath(f"{self._display_id}.tar")
+                    self._data_file_downloaded = False  # And thus obtaining reference like this: ...
+                    """
+                                                    self._s3_connector.get_s3_file_reference(
+                                                        file_key=self._get_s3_bucket_key_of_file(self._data_file_path)
+                                                    )
+                    """
 
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == '404':
@@ -189,7 +193,7 @@ class DownloadedFile:
             self._upload_to_s3(local_file=self._metadata_xml_file_path)
 
             # Creating STAC feature JSON
-            self._create_feature()
+            self._generate_stac_feature()
 
             # Generating thumbnail
             if self._generate_thumbnail():
@@ -294,8 +298,10 @@ class DownloadedFile:
                 return tar.getnames()
 
         else:
-            with tarfile.open(fileobj=path_to_tar) as tar:
-                return tar.getnames()
+            tar_s3_reference = self._s3_connector.get_s3_file_reference(self._get_s3_bucket_key_of_file(path_to_tar))
+            with tarfile.open(fileobj=tar_s3_reference) as tar:
+                names = tar.getnames()
+                return names
 
     def _untar(self, path_to_tar=None, tar_downloaded=None, untarred_filename=None, path_to_output_directory=None):
         if path_to_tar is None:
@@ -312,9 +318,8 @@ class DownloadedFile:
         else:
             path_to_output_directory = self._workdir
 
-        self._logger.info(f"Extracting {str(path_to_tar)}/{untarred_filename} into {path_to_output_directory}.")
-
         if tar_downloaded:
+            self._logger.info(f"Extracting {str(path_to_tar)}/{untarred_filename} into {path_to_output_directory}.")
             with tarfile.open(name=path_to_tar, mode='r:*') as tar:
                 try:
                     tar.extract(untarred_filename, path_to_output_directory)
@@ -323,7 +328,12 @@ class DownloadedFile:
                     return False
 
         else:
-            with tarfile.open(fileobj=path_to_tar) as tar:
+            tar_s3_reference = self._s3_connector.get_s3_file_reference(self._get_s3_bucket_key_of_file(path_to_tar))
+            self._logger.info(
+                f"Extracting {str(tar_s3_reference)}/{untarred_filename} into {path_to_output_directory}."
+            )
+
+            with tarfile.open(fileobj=tar_s3_reference) as tar:
                 try:
                     tar.extract(untarred_filename, path_to_output_directory)
                     return True
@@ -391,9 +401,9 @@ class DownloadedFile:
         stac_item_dict['assets'].clear()
         stac_item_dict['links'].clear()
 
-    def _create_feature(self):
+    def _generate_stac_feature(self):
         """
-        Method generates STAC item dictionary
+        Method generates STAC item/feature dictionary
 
         :return: None, method saves STAC item into self._feature_dict
             and also Path to JSON file into self._feature_json_file

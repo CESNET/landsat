@@ -134,6 +134,8 @@ class S3Connector:
         :raise: botocore.exceptions.ClientError for every error other than HTTP/404
         """
 
+        bucket_key = str(bucket_key)
+
         try:
             key_head = self._s3_client.head_object(Bucket=self._bucket, Key=bucket_key)
         except botocore.exceptions.ClientError as e:
@@ -166,6 +168,8 @@ class S3Connector:
     def get_s3_file_reference(self, file_key=None):
         if file_key is None:
             raise S3KeyNotSpecified()
+
+        file_key = str(file_key)
 
         if not self.check_if_key_exists(bucket_key=file_key):
             raise S3KeyDoesNotExist(key=file_key)
