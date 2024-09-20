@@ -15,7 +15,7 @@ log_name = "landsat.log"
 log_level = 20
 log_logger = "LandsatLogger"
 
-m2m_scene_label = "landsat_downloader_"
+m2m_scene_label = "landsat_downloader_testing"
 
 # When changing port it must be reflected in http_server/docker-compose.yml!
 s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"

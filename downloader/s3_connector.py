@@ -1,9 +1,11 @@
 import boto3
+import io
 import logging
 
 import botocore.exceptions
 
 import config.s3_config as s3_config
+from downloader.exceptions.s3_connector import S3KeyNotSpecified, S3KeyDoesNotExist
 
 """
 Create file ./config/s3_config.py with following content:
@@ -36,13 +38,13 @@ class S3Connector:
         :param host_bucket:
         """
         self._logger = logger
-        self.s3_client = boto3.client(
+        self._s3_client = boto3.client(
             service_name=service_name,
             endpoint_url=s3_endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
         )
-        self.bucket = host_bucket
+        self._bucket = host_bucket
 
     def upload_file(self, local_file, bucket_key):
         """
@@ -55,7 +57,7 @@ class S3Connector:
 
         local_file = str(local_file)
         self._logger.info(f"Uploading file={local_file} to S3 as key={bucket_key}.")
-        self.s3_client.upload_file(local_file, self.bucket, bucket_key)
+        self._s3_client.upload_file(local_file, self._bucket, bucket_key)
 
     def download_file(self, path_to_download, bucket_key):
         """
@@ -70,7 +72,7 @@ class S3Connector:
 
         try:
             with open(path_to_download, 'wb') as downloaded_file:
-                self.s3_client.download_fileobj(self.bucket, bucket_key, downloaded_file)
+                self._s3_client.download_fileobj(self._bucket, bucket_key, downloaded_file)
 
         except botocore.exceptions.ClientError as e:
             raise e
@@ -83,7 +85,7 @@ class S3Connector:
         :return: nothing
         """
         self._logger.info(f"Deleting S3 key={bucket_key}.")
-        self.s3_client.delete_object(Bucket=self.bucket, Key=bucket_key)
+        self._s3_client.delete_object(Bucket=self._bucket, Key=bucket_key)
 
     def check_if_key_exists(self, bucket_key, expected_length=None):
         """
@@ -95,8 +97,10 @@ class S3Connector:
         :raise: botocore.exceptions.ClientError for every error other than HTTP/404
         """
 
+        bucket_key = str(bucket_key)
+
         try:
-            key_head = self.s3_client.head_object(Bucket=self.bucket, Key=bucket_key)
+            key_head = self._s3_client.head_object(Bucket=self._bucket, Key=bucket_key)
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == "404":
                 # File/key does not exist
@@ -115,8 +119,8 @@ class S3Connector:
             else:
                 # ...but does not have the right size. Let's delete this key and download it again.
                 self._logger.warning(
-                    f"S3 key {bucket_key} length ({expected_length} b) does not match length returned " +
-                    f"by M2M API ({key_head['ContentLength']} b)"
+                    f"S3 key {bucket_key} length ({key_head['ContentLength']} b) does not match expected length " +
+                    f"({expected_length} b)"
                 )
                 self.delete_key(bucket_key)
                 return False
