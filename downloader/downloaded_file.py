@@ -169,14 +169,7 @@ class DownloadedFile:
             else:
                 # File should already be downloaded in S3, just regenerate feature JSON and re-register it
                 try:
-                    # self._download_feature_from_s3() ## No need to download, we'll work directly from S3
-                    self._data_file_path = self._workdir.joinpath(f"{self._display_id}.tar")
-                    self._data_file_downloaded = False  # And thus obtaining reference like this: ...
-                    """
-                                                    self._s3_connector.get_s3_file_reference(
-                                                        file_key=self._get_s3_bucket_key_of_file(self._data_file_path)
-                                                    )
-                    """
+                    self._download_feature_from_s3()
 
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == '404':
@@ -186,6 +179,8 @@ class DownloadedFile:
                         self._force_redownload_file = True  # Setting the _force_redownload_file flag to True
                         self.process()  # Running again self.process method to process the file again
                         return  # After processing the file again return from this method to prevent never-ending loop
+                    else:
+                        raise e
 
             self._untar_metadata()
 
@@ -218,17 +213,20 @@ class DownloadedFile:
         except Exception as exception:
             self.exception_occurred = exception
 
-    def _check_if_already_downloaded(self, expected_length):
+    def _check_if_already_downloaded(self, expected_length=None):
         """
         Method checks whether this file already exists on S3 storage.
 
-        :param expected_length: [int] Expected lenght of file in bytes
+        :param expected_length: [int] Expected lenght of file in bytes | None if we do not want to check file size
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
 
         # We forced to re-download file from USGS, thus returning False
         if self._force_redownload_file:
             return False
+
+        if self._catalogue_only:
+            expected_length=None
 
         return (
             self._s3_connector.check_if_key_exists(
@@ -282,7 +280,7 @@ class DownloadedFile:
         expected_size = int(response.headers['Content-Length'])
         real_size = os.stat(str(self._data_file_path)).st_size
 
-        if (not self._catalogue_only) and (expected_size != real_size):
+        if expected_size != real_size:
             self._data_file_path.unlink(missing_ok=False)
             raise DownloadedFileDownloadedFileHasDifferentSize(
                 expected_size=expected_size, real_size=real_size,
@@ -292,23 +290,16 @@ class DownloadedFile:
         self._data_file_downloaded = True
         return
 
-    def _get_contents_of_tar(self, path_to_tar=_data_file_path, tar_downloaded=_data_file_downloaded):
-        if tar_downloaded:
-            with tarfile.open(name=path_to_tar, mode='r:*') as tar:
-                return tar.getnames()
-
-        else:
-            tar_s3_reference = self._s3_connector.get_s3_file_reference(self._get_s3_bucket_key_of_file(path_to_tar))
-            with tarfile.open(fileobj=tar_s3_reference) as tar:
-                names = tar.getnames()
-                return names
-
-    def _untar(self, path_to_tar=None, tar_downloaded=None, untarred_filename=None, path_to_output_directory=None):
+    def _get_contents_of_tar(self, path_to_tar=None):
         if path_to_tar is None:
             path_to_tar = self._data_file_path
 
-        if tar_downloaded is None:
-            tar_downloaded = self._data_file_downloaded
+        with tarfile.open(name=path_to_tar, mode='r:*') as tar:
+            return tar.getnames()
+
+    def _untar(self, path_to_tar=None, untarred_filename=None, path_to_output_directory=None):
+        if path_to_tar is None:
+            path_to_tar = self._data_file_path
 
         if untarred_filename is None:
             raise DownloadedFileFilenameToUntarNotSpecified()
@@ -318,27 +309,13 @@ class DownloadedFile:
         else:
             path_to_output_directory = self._workdir
 
-        if tar_downloaded:
-            self._logger.info(f"Extracting {str(path_to_tar)}/{untarred_filename} into {path_to_output_directory}.")
-            with tarfile.open(name=path_to_tar, mode='r:*') as tar:
-                try:
-                    tar.extract(untarred_filename, path_to_output_directory)
-                    return True
-                except KeyError:
-                    return False
-
-        else:
-            tar_s3_reference = self._s3_connector.get_s3_file_reference(self._get_s3_bucket_key_of_file(path_to_tar))
-            self._logger.info(
-                f"Extracting {str(tar_s3_reference)}/{untarred_filename} into {path_to_output_directory}."
-            )
-
-            with tarfile.open(fileobj=tar_s3_reference) as tar:
-                try:
-                    tar.extract(untarred_filename, path_to_output_directory)
-                    return True
-                except KeyError:
-                    return False
+        self._logger.info(f"Extracting {str(path_to_tar)}/{untarred_filename} into {path_to_output_directory}.")
+        with tarfile.open(name=path_to_tar, mode='r:*') as tar:
+            try:
+                tar.extract(untarred_filename, path_to_output_directory)
+                return True
+            except KeyError:
+                return False
 
     def _untar_metadata(self):
         """
@@ -347,23 +324,17 @@ class DownloadedFile:
         """
 
         metadata_xml_filename = f"{self._display_id}_MTL.xml"
-        if self._untar(
-                untarred_filename=metadata_xml_filename
-        ):
+        if self._untar(untarred_filename=metadata_xml_filename):
             self._metadata_xml_file_path = self._workdir.joinpath(metadata_xml_filename)
         else:
             raise DownloadedFileDoesNotContainMetadata(display_id=self._display_id)
 
         angle_coefficient_filename = f"{self._display_id}_ANG.txt"
-        if self._untar(
-                untarred_filename=angle_coefficient_filename
-        ):
+        if self._untar(untarred_filename=angle_coefficient_filename):
             self._angle_coefficient_file_path = self._workdir.joinpath(angle_coefficient_filename)
 
         pregenerated_stac_item_filename = f"{self._display_id}_stac.json"
-        if self._untar(
-                untarred_filename=pregenerated_stac_item_filename
-        ):
+        if self._untar(untarred_filename=pregenerated_stac_item_filename):
             self._pregenerated_stac_item_file_path = self._workdir.joinpath(pregenerated_stac_item_filename)
 
     def _download_feature_from_s3(self):
@@ -611,11 +582,11 @@ class DownloadedFile:
                 raise ValueError(f"Unexpected dataset {self._dataset}!")
 
         if blue_tif_filename and green_tif_filename and red_tif_filename:
-            self._untar(blue_tif_filename)
+            self._untar(untarred_filename=blue_tif_filename)
             blue_tif_path = self._workdir.joinpath(blue_tif_filename)
-            self._untar(green_tif_filename)
+            self._untar(untarred_filename=green_tif_filename)
             green_tif_path = self._workdir.joinpath(green_tif_filename)
-            self._untar(red_tif_filename)
+            self._untar(untarred_filename=red_tif_filename)
             red_tif_path = self._workdir.joinpath(red_tif_filename)
 
             self._combine_tifs(
@@ -626,11 +597,11 @@ class DownloadedFile:
             )
 
         elif green_tif_filename and red_tif_filename and nir_tif_filename:
-            self._untar(green_tif_filename)
+            self._untar(untarred_filename=green_tif_filename)
             green_tif_path = self._workdir.joinpath(green_tif_filename)
-            self._untar(red_tif_filename)
+            self._untar(untarred_filename=red_tif_filename)
             red_tif_path = self._workdir.joinpath(red_tif_filename)
-            self._untar(nir_tif_filename)
+            self._untar(untarred_filename=nir_tif_filename)
             nir_tif_path = self._workdir.joinpath(nir_tif_filename)
 
             self._combine_tifs(

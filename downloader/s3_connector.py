@@ -17,43 +17,6 @@ host_bucket = "landsat"
 """
 
 
-class S3File(io.BytesIO):
-    def __init__(self, bucket_name, key_name, s3client):
-        super().__init__()
-        self.bucket_name = bucket_name
-        self.key_name = key_name
-        self.s3client = s3client
-        self.offset = 0
-        self.total_download = 0
-
-    def close(self):
-        return
-
-    def read(self, size):
-        self.total_download += size
-        #print('read: offset = {}, size = {}, total download = {}'.format(self.offset, size, self.total_download))
-
-        start = self.offset
-        end = self.offset + size - 1
-        try:
-            s3_object = self.s3client.get_object(
-                Bucket=self.bucket_name, Key=self.key_name, Range="bytes=%d-%d" % (start, end)
-            )
-        except:
-            return bytearray()
-        self.offset = self.offset + size
-        result = s3_object['Body'].read()
-        return result
-
-    def seek(self, offset, whence=0):
-        if whence == 0:
-            #print('seek: offset {} -> {} (diff = {} kB)'.format(self.offset, offset, (offset - self.offset) // 1000))
-            self.offset = offset
-
-    def tell(self):
-        return self.offset
-
-
 class S3Connector:
     def __init__(
             self,
@@ -156,22 +119,11 @@ class S3Connector:
             else:
                 # ...but does not have the right size. Let's delete this key and download it again.
                 self._logger.warning(
-                    f"S3 key {bucket_key} length ({expected_length} b) does not match length returned " +
-                    f"by M2M API ({key_head['ContentLength']} b)"
+                    f"S3 key {bucket_key} length ({key_head['ContentLength']} b) does not match expected length " +
+                    f"({expected_length} b)"
                 )
                 self.delete_key(bucket_key)
                 return False
         else:
             # We do not have to check sizes, file exists and that's enough
             return True
-
-    def get_s3_file_reference(self, file_key=None):
-        if file_key is None:
-            raise S3KeyNotSpecified()
-
-        file_key = str(file_key)
-
-        if not self.check_if_key_exists(bucket_key=file_key):
-            raise S3KeyDoesNotExist(key=file_key)
-
-        return S3File(bucket_name=self._bucket, key_name=file_key, s3client=self._s3_client)
