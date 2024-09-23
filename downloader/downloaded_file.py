@@ -3,12 +3,16 @@ import logging
 import mimetypes
 import os
 import tarfile
+from tempfile import TemporaryDirectory
 
+import numpy as np
+import rasterio
 import requests
 import re
 
 from urllib.parse import urlparse, urlunsplit
 from pathlib import Path
+from PIL import Image
 
 from stactools.landsat import stac as stac_landsat
 
@@ -35,8 +39,11 @@ class DownloadedFile:
 
     _stac_connector: STACConnector
     _s3_connector: S3Connector
-    _workdir: Path
 
+    _workdir_temp: TemporaryDirectory
+    _workdir: Path | None = None
+
+    _data_file_downloaded = False
     _data_file_path = None
     _metadata_xml_file_path = None
     _angle_coefficient_file_path = None
@@ -52,16 +59,12 @@ class DownloadedFile:
     # True if we want to redownload file eventhough it is already downloaded
     _force_redownload_file = False
 
-    _thread_lock = None
-
     def __init__(
             self,
             attributes=None,
             stac_connector=None, s3_connector=None,
-            workdir=None,
             s3_download_host=landsat_config.s3_download_host,
             logger=logging.getLogger("DownloadedFile"),
-            thread_lock=None,
             catalogue_only=landsat_config.catalogue_only,
             force_redownload_file=landsat_config.force_redownload_file
     ):
@@ -74,24 +77,14 @@ class DownloadedFile:
             }
         :param stac_connector: instance of StacConnector which will be used for registering items
         :param s3_connector: instance of S3Connector into which the file will be downloaded
-        :param workdir: Path to workdir
         :param s3_download_host: Base URL of S3 download host relay (URL of the computer on which
             ../http_server/main.py is running)
         :param logger: logger
-        :param thread_lock: Since instance of DownloadedFile is run in multiple threads and uses shared resources
-            like the stac_connector or s3_connector, the ThreadLocking is nescessary
         """
         self._logger = logger
 
-        if thread_lock is None:
-            raise DownloadedFileThreadLockNotSet()
-        self._thread_lock = thread_lock
-
         if attributes is None:
             raise DownloadedFileWrongConstructorArgumentsPassed()
-
-        if workdir is None:
-            raise DownloadedFileWorkdirNotSpecified(display_id=attributes['displayId'])
 
         if s3_connector is None:
             raise DownloadedFileS3ConnectorNotSpecified(display_id=attributes['displayId'])
@@ -114,35 +107,20 @@ class DownloadedFile:
         self._stac_connector = stac_connector
         self._s3_connector = s3_connector
 
-        self._workdir = workdir
         self._download_host = urlparse(s3_download_host)
 
-        self._feature_id_json_file_path = self._workdir.joinpath(self._display_id + "_featureId.json")
+        self._workdir_temp = TemporaryDirectory()
+        self._workdir = Path(self._workdir_temp.name)
 
         self.exception_occurred = None
 
     def __del__(self):
         """
-        Destructor, removes all files this Class has created during its life
+        Destructor, removes the temporary workdir
         :return:
         """
-        if self._data_file_path is not None:
-            self._data_file_path.unlink(missing_ok=True)
-
-        if self._metadata_xml_file_path is not None:
-            self._metadata_xml_file_path.unlink(missing_ok=True)
-
-        if self._angle_coefficient_file_path is not None:
-            self._angle_coefficient_file_path.unlink(missing_ok=True)
-
-        if self._pregenerated_stac_item_file_path is not None:
-            self._pregenerated_stac_item_file_path.unlink(missing_ok=True)
-
-        if self._feature_json_file_path is not None:
-            self._feature_json_file_path.unlink(missing_ok=True)
-
-        if self._feature_id_json_file_path is not None:
-            self._feature_id_json_file_path.unlink(missing_ok=True)
+        if self._workdir_temp:
+            self._workdir_temp.cleanup()
 
     def get_display_id(self):
         return self._display_id
@@ -173,10 +151,9 @@ class DownloadedFile:
 
         try:
             # ============================================ DOWNLOADING FILE ============================================
-            file_downloaded = None
             while True:
                 try:
-                    file_downloaded = self._download_self()
+                    self._download_self()
                     break
 
                 except DownloadedFileDownloadedFileHasDifferentSize as e:
@@ -185,40 +162,14 @@ class DownloadedFile:
                     continue
             # ==========================================================================================================
 
-            if file_downloaded:
-                self._untar_metadata()
-
+            if self._data_file_downloaded:
                 # Uploading data file to S3
-                self._s3_connector.upload_file(
-                    local_file=self._data_file_path,
-                    bucket_key=self._get_s3_bucket_key_of_file(self._data_file_path)
-                )
-
-                # Uploading metadata file to S3
-                self._s3_connector.upload_file(
-                    local_file=self._metadata_xml_file_path,
-                    bucket_key=self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)
-                )
-
-                # Uploading angle coefficient file to S3
-                if self._angle_coefficient_file_path is not None:
-                    self._s3_connector.upload_file(
-                        local_file=self._angle_coefficient_file_path,
-                        bucket_key=self._get_s3_bucket_key_of_file(self._angle_coefficient_file_path)
-                    )
-
-                # Uploading angle coefficient file to S3
-                if self._pregenerated_stac_item_file_path is not None:
-                    self._s3_connector.upload_file(
-                        local_file=self._pregenerated_stac_item_file_path,
-                        bucket_key=self._get_s3_bucket_key_of_file(self._pregenerated_stac_item_file_path)
-                    )
+                self._upload_to_s3(local_file=self._data_file_path)
 
             else:
-                # File is already downloaded in S3, just regenerate feature JSON and re-register it
+                # File should already be downloaded in S3, just regenerate feature JSON and re-register it
                 try:
                     self._download_feature_from_s3()
-                    self._untar_metadata()
 
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == '404':
@@ -228,31 +179,54 @@ class DownloadedFile:
                         self._force_redownload_file = True  # Setting the _force_redownload_file flag to True
                         self.process()  # Running again self.process method to process the file again
                         return  # After processing the file again return from this method to prevent never-ending loop
+                    else:
+                        raise e
 
-            # Preparing STAC feature JSON, uploading it to S3, and registering to STAC
-            self._prepare_stac_feature_structure()
+            self._untar_metadata()
 
-            self._s3_connector.upload_file(
-                local_file=self._feature_json_file_path,
-                bucket_key=self._get_s3_bucket_key_of_file(self._feature_json_file_path)
+            # Uploading metadata file to S3
+            self._upload_to_s3(local_file=self._metadata_xml_file_path)
+
+            # Creating STAC feature JSON
+            self._generate_stac_feature()
+
+            # Generating thumbnail
+            if self._generate_thumbnail():
+                self._upload_to_s3(local_file=self._thumbnail_file_path)
+
+            # Adding assests (data, metadata, thumbnail...) to feature
+            self._append_assets_to_feature()
+
+            # Registering feature to STAC
+            self._feature_id = self._stac_connector.register_stac_item(
+                json_dict=self._feature_dict, collection=self._dataset
             )
-            self._feature_id = self._stac_connector.register_stac_item(self._feature_dict, self._dataset)
-            self._save_feature_id()
+
+            # Saving feature dictionary to JSON file
+            self._dump_feature_into_json()
+
+            # Uploading feature JSON file and JSON file containing feature_id to S3 storage
+            self._upload_to_s3(local_file=self._feature_json_file_path)
+
+            self._upload_to_s3(local_file=self._prepare_feature_id_file())
 
         except Exception as exception:
             self.exception_occurred = exception
 
-    def _check_if_already_downloaded(self, expected_length):
+    def _check_if_already_downloaded(self, expected_length=None):
         """
         Method checks whether this file already exists on S3 storage.
 
-        :param expected_length: [int] Expected lenght of file in bytes
+        :param expected_length: [int] Expected lenght of file in bytes | None if we do not want to check file size
         :return: True if file exists and its size on storage equals to expected_lenght, otherwise False
         """
 
         # We forced to re-download file from USGS, thus returning False
         if self._force_redownload_file:
             return False
+
+        if self._catalogue_only:
+            expected_length=None
 
         return (
             self._s3_connector.check_if_key_exists(
@@ -265,9 +239,12 @@ class DownloadedFile:
         """
         Method downloads the file which the instance of DownloadedFile represents into local copy (workdir/filename)
 
-        :return: True if the new copy of the file has beed downloaded, False if the file was already found on S3 storage
+        Method sets self._data_file_downloaded variable to...
+            True if the new copy of the file has beed downloaded into local file,
+            False if the file was already found on S3 storage
+
+        :return: none
         """
-        self._workdir.mkdir(exist_ok=True)
 
         response = requests.get(self._url, stream=True)
 
@@ -285,9 +262,10 @@ class DownloadedFile:
             self._logger.info(
                 f"File {self._get_s3_bucket_key_of_file(self._filename)} has been already downloaded."
             )
-            return False
+            self._data_file_downloaded = False
+            return
 
-        # Creating path for datafile
+            # Creating path for datafile
         self._data_file_path = self._workdir.joinpath(self._filename)
         self._data_file_path.touch(exist_ok=True)
 
@@ -302,55 +280,67 @@ class DownloadedFile:
         expected_size = int(response.headers['Content-Length'])
         real_size = os.stat(str(self._data_file_path)).st_size
 
-        if (not self._catalogue_only) and (expected_size != real_size):
+        if expected_size != real_size:
             self._data_file_path.unlink(missing_ok=False)
             raise DownloadedFileDownloadedFileHasDifferentSize(
                 expected_size=expected_size, real_size=real_size,
                 display_id=self._display_id
             )
 
-        return True
+        self._data_file_downloaded = True
+        return
+
+    def _get_contents_of_tar(self, path_to_tar=None):
+        if path_to_tar is None:
+            path_to_tar = self._data_file_path
+
+        with tarfile.open(name=path_to_tar, mode='r:*') as tar:
+            return tar.getnames()
+
+    def _untar(self, path_to_tar=None, untarred_filename=None, path_to_output_directory=None):
+        if path_to_tar is None:
+            path_to_tar = self._data_file_path
+
+        if untarred_filename is None:
+            raise DownloadedFileFilenameToUntarNotSpecified()
+
+        if path_to_output_directory is None and self._workdir is None:
+            raise DownloadedFileWorkdirNotSpecified()
+        else:
+            path_to_output_directory = self._workdir
+
+        self._logger.info(f"Extracting {str(path_to_tar)}/{untarred_filename} into {path_to_output_directory}.")
+        with tarfile.open(name=path_to_tar, mode='r:*') as tar:
+            try:
+                tar.extract(untarred_filename, path_to_output_directory)
+                return True
+            except KeyError:
+                return False
 
     def _untar_metadata(self):
         """
         Method untars metadata needed for creating STAC item
         :return: None
         """
-        metadata_xml = self._display_id + "_MTL.xml"
 
-        angle_coefficient_present = True
-        angle_coefficient = self._display_id + "_ANG.txt"
+        metadata_xml_filename = f"{self._display_id}_MTL.xml"
+        if self._untar(untarred_filename=metadata_xml_filename):
+            self._metadata_xml_file_path = self._workdir.joinpath(metadata_xml_filename)
+        else:
+            raise DownloadedFileDoesNotContainMetadata(display_id=self._display_id)
 
-        pregenerated_stac_item_present = True
-        pregenerated_stac_item = self._display_id + "_stac.json"
+        angle_coefficient_filename = f"{self._display_id}_ANG.txt"
+        if self._untar(untarred_filename=angle_coefficient_filename):
+            self._angle_coefficient_file_path = self._workdir.joinpath(angle_coefficient_filename)
 
-        with tarfile.open(name=self._data_file_path) as tar:
-            try:
-                tar.extract(metadata_xml, self._workdir)
-            except KeyError:
-                raise DownloadedFileDoesNotContainMetadata(display_id=self._display_id)
-
-            try:
-                tar.extract(angle_coefficient, self._workdir)
-            except KeyError:
-                angle_coefficient_present = False
-
-            try:
-                tar.extract(pregenerated_stac_item, self._workdir)
-            except KeyError:
-                pregenerated_stac_item_present = False
-
-        self._metadata_xml_file_path = self._workdir.joinpath(metadata_xml)
-
-        if angle_coefficient_present:
-            self._angle_coefficient_file_path = self._workdir.joinpath(angle_coefficient)
-
-        if pregenerated_stac_item_present:
-            self._pregenerated_stac_item_file_path = self._workdir.joinpath(pregenerated_stac_item)
+        pregenerated_stac_item_filename = f"{self._display_id}_stac.json"
+        if self._untar(untarred_filename=pregenerated_stac_item_filename):
+            self._pregenerated_stac_item_file_path = self._workdir.joinpath(pregenerated_stac_item_filename)
 
     def _download_feature_from_s3(self):
         """
         Method downloads data file from S3
+        Method sets self._data_file_downloaded variable to True.
         :return: None
         """
 
@@ -359,18 +349,13 @@ class DownloadedFile:
             self._data_file_path,
             self._get_s3_bucket_key_of_file(self._data_file_path)
         )
+        self._data_file_downloaded = True
 
-    def _dump_stac_feature_into_json(self, feature_dict=None):
+    def _dump_feature_into_json(self):
         """
         Methods creates JSON file from STAC item dictionary
-
-        :param feature_dict: feature_dictionary, if none then using self._feature_dict
-        :return: None, Path to file saved in self._feature_json_file
+        Result will be saved in self._feature_json_file_path
         """
-
-        if feature_dict is not None:
-            self._feature_dict = feature_dict
-
         self._feature_json_file_path = self._workdir.joinpath(self._display_id + "_feature.json")
 
         with open(self._feature_json_file_path, "w") as feature_json_file:
@@ -387,98 +372,9 @@ class DownloadedFile:
         stac_item_dict['assets'].clear()
         stac_item_dict['links'].clear()
 
+    def _generate_stac_feature(self):
         """
-        if 'thumbnail' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('thumbnail')
-
-        if 'reduced_resolution_browse' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('reduced_resolution_browse')
-
-        if 'index' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('mtl.json')
-
-        if 'mtl.json' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('mtl.json')
-
-        if 'mtl.txt' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('mtl.txt')
-
-        if 'ang' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('ang')
-
-        if 'qa_pixel' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('qa_pixel')
-
-        if 'qa_radsat' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('qa_radsat')
-
-        if 'qa_aerosol' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('qa_aerosol')
-
-        if 'coastal' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('coastal')
-
-        if 'blue' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('blue')
-
-        if 'green' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('green')
-
-        if 'red' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('red')
-
-        if 'nir08' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('nir08')
-
-        if 'swir16' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('swir16')
-
-        if 'swir22' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('swir22')
-
-        if 'nir09' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('nir09')
-
-        if 'atmos_opacity' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('atmos_opacity')
-
-        if 'cloud_qa' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('cloud_qa')
-
-        if 'lwir' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('lwir')
-
-        if 'lwir11' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('lwir11')
-
-        if 'atran' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('atran')
-
-        if 'cdist' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('cdist')
-
-        if 'drad' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('drad')
-
-        if 'urad' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('urad')
-
-        if 'trad' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('trad')
-
-        if 'emis' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('emis')
-
-        if 'emsd' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('emsd')
-
-        if 'qa' in stac_item_dict['assets'].keys():
-            stac_item_dict['assets'].pop('qa')
-        """
-
-    def _prepare_stac_feature_structure(self):
-        """
-        Method generates STAC item dictionary
+        Method generates STAC item/feature dictionary
 
         :return: None, method saves STAC item into self._feature_dict
             and also Path to JSON file into self._feature_json_file
@@ -486,8 +382,10 @@ class DownloadedFile:
 
         try:
             self._logger.info("Trying to generate STAC item using stactools.")
-            stac_item_dict = (stac_landsat.create_item(str(self._metadata_xml_file_path))
-                              .to_dict(include_self_link=False))
+            stac_item_dict = (
+                stac_landsat.create_item(str(self._metadata_xml_file_path))
+                .to_dict(include_self_link=False)
+            )
 
         except Exception as stactools_exception:
             self._logger.warning("stactools were unable to create STAC item, using pre-generated STAC item.")
@@ -502,7 +400,10 @@ class DownloadedFile:
 
         self._stac_item_clear(stac_item_dict)
 
-        stac_item_dict['assets'].update(
+        self._feature_dict = stac_item_dict
+
+    def _append_assets_to_feature(self):
+        self._feature_dict['assets'].update(
             {
                 'mtl.xml': {
                     'href': urlunsplit(
@@ -512,7 +413,10 @@ class DownloadedFile:
                             f"{self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)}",
                             "", ""
                         )
-                    )
+                    ),
+                    'type': mimetypes.guess_type(str(self._metadata_xml_file_path))[0],
+                    'title': f"Metadata",
+                    'description': f"Metadata for {self._dataset_fullname[self._dataset]} item {self._display_id}."
                 },
                 'data': {
                     'href': urlunsplit(
@@ -524,31 +428,35 @@ class DownloadedFile:
                         )
                     ),
                     'type': mimetypes.guess_type(str(self._data_file_path))[0],
-                    'title': self._dataset_fullname[self._dataset],
-                    'description': f"{self._dataset_fullname[self._dataset]} full data tarball."
+                    'title': f"Data",
+                    'description': f"{self._dataset_fullname[self._dataset]} full data tarball for item {self._display_id}."
+                },
+                'thumbnail': {
+                    'href': urlunsplit(
+                        (
+                            self._download_host.scheme,
+                            self._download_host.netloc,
+                            f"{self._get_s3_bucket_key_of_file(self._thumbnail_file_path)}",
+                            "", ""
+                        )
+                    ),
+                    'type': mimetypes.guess_type(str(self._thumbnail_file_path))[0],
+                    'title': f"Thumbnail",
+                    'description': f"Thumbnail for {self._dataset_fullname[self._dataset]} item {self._display_id}."
                 }
             }
         )
 
-        """
-        with self._thread_lock:
-            from stac_templates.feature import feature
-            local_feature = feature
-            local_feature['features'] = [stac_item_dict]
-            self._feature_dict = local_feature
-        """
-        self._feature_dict = {
-            "type": "FeatureCollection",
-            "features": [stac_item_dict]
-        }
-        self._dump_stac_feature_into_json()
+    def _upload_to_s3(self, local_file):
+        self._s3_connector.upload_file(
+            local_file=local_file,
+            bucket_key=self._get_s3_bucket_key_of_file(local_file)
+        )
 
-    def _save_feature_id(self):
+    def _prepare_feature_id_file(self):
         """
-        Method generates self._feature_id_json_file with information about STAC feature id assigned to this file and
-        saves it to S3 storage
-
-        :return: None
+        Method generates feature_id_json_file with information about STAC feature id assigned to this item
+        :return: Path to feature_id_json_file
         """
 
         feature_id_json_dict = {
@@ -557,10 +465,153 @@ class DownloadedFile:
             'featureId': self._feature_id
         }
 
-        with open(self._feature_id_json_file_path, "w") as feature_id_json_file:
+        feature_id_json_file_path = self._workdir.joinpath(self._display_id + "_featureId.json")
+
+        with open(feature_id_json_file_path, "w") as feature_id_json_file:
             feature_id_json_file.write(json.dumps(feature_id_json_dict))
 
-        self._s3_connector.upload_file(
-            local_file=self._feature_id_json_file_path,
-            bucket_key=self._get_s3_bucket_key_of_file(self._feature_id_json_file_path)
-        )
+        return feature_id_json_file_path
+
+    def _combine_tifs(self, red_path, green_path, blue_path, size=None):
+        from utils.thumbnail_generation import normalize, linear_stretch, gamma_correction, replace_tif_to_jpg
+
+        self._logger.info(f"Combining bands into thumbnail {self._thumbnail_file_path}.")
+
+        red = rasterio.open(red_path).read(1)
+        green = rasterio.open(green_path).read(1)
+        blue = rasterio.open(blue_path).read(1)
+
+        red = normalize(red)
+        green = normalize(green)
+        blue = normalize(blue)
+
+        red = linear_stretch(red)
+        green = linear_stretch(green)
+        blue = linear_stretch(blue)
+
+        rgb = np.dstack((red, green, blue))
+        rgb = gamma_correction(rgb, gamma=0.8)
+
+        image = Image.fromarray((rgb * 255).astype(np.uint8))
+        if size is not None:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+
+        self._thumbnail_file_path = Path(replace_tif_to_jpg(str(self._thumbnail_file_path)))
+        image.save(self._thumbnail_file_path, 'JPEG', quality=90)
+
+    def _generate_thumbnail(self, size=(1000, 1000)):
+        """
+        Method generates thumbnail image
+        :return: True if thumbnail was generated, False if it was not (f.x. thumbnail has been generated already)
+        """
+        self._thumbnail_file_path = self._workdir.joinpath(f"{self._display_id}_thumbnail.jpg")
+        if self._s3_connector.check_if_key_exists(self._get_s3_bucket_key_of_file(self._thumbnail_file_path)):
+            self._logger.info(f"Thumbnail already exists for {self._dataset}/{self._display_id}, skipping generation.")
+            return False
+
+        tar_file_list = self._get_contents_of_tar()
+
+        blue_tif_filename = None
+        green_tif_filename = None
+        red_tif_filename = None
+        nir_tif_filename = None
+
+        match self._dataset:
+            case "landsat_ot_c2_l1" | "landsat_ot_c2_l2":
+                blue_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B2' in filename.upper()),
+                    None
+                )
+                green_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B3' in filename.upper()),
+                    None
+                )
+                red_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B4' in filename.upper()),
+                    None
+                )
+
+            case "landsat_etm_c2_l1" | "landsat_etm_c2_l2" | "landsat_tm_c2_l1" | "landsat_tm_c2_l2":
+                blue_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B1' in filename.upper()),
+                    None
+                )
+                green_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B2' in filename.upper()),
+                    None
+                )
+                red_tif_filename = next(
+                    (filename for filename in tar_file_list if 'B3' in filename.upper()),
+                    None
+                )
+
+            case "landsat_mss_c2_l1":
+                match self._feature_dict['properties']['platform']:
+                    case "landsat-1" | "landsat-2" | "landsat-3":
+                        green_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B4' in filename.upper()),
+                            None
+                        )
+                        red_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B5' in filename.upper()),
+                            None
+                        )
+                        nir_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B6' in filename.upper()),
+                            None
+                        )
+
+                    case "landsat-4" | "landsat-5":
+                        green_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B1' in filename.upper()),
+                            None
+                        )
+                        red_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B2' in filename.upper()),
+                            None
+                        )
+                        nir_tif_filename = next(
+                            (filename for filename in tar_file_list if 'B3' in filename.upper()),
+                            None
+                        )
+
+                    case _:
+                        raise ValueError(
+                            f"Unexpected platform: {self._feature_dict['properties']['platform']}!")
+            case _:
+                raise ValueError(f"Unexpected dataset {self._dataset}!")
+
+        if blue_tif_filename and green_tif_filename and red_tif_filename:
+            self._untar(untarred_filename=blue_tif_filename)
+            blue_tif_path = self._workdir.joinpath(blue_tif_filename)
+            self._untar(untarred_filename=green_tif_filename)
+            green_tif_path = self._workdir.joinpath(green_tif_filename)
+            self._untar(untarred_filename=red_tif_filename)
+            red_tif_path = self._workdir.joinpath(red_tif_filename)
+
+            self._combine_tifs(
+                red_path=red_tif_path,
+                green_path=green_tif_path,
+                blue_path=blue_tif_path,
+                size=size
+            )
+
+        elif green_tif_filename and red_tif_filename and nir_tif_filename:
+            self._untar(untarred_filename=green_tif_filename)
+            green_tif_path = self._workdir.joinpath(green_tif_filename)
+            self._untar(untarred_filename=red_tif_filename)
+            red_tif_path = self._workdir.joinpath(red_tif_filename)
+            self._untar(untarred_filename=nir_tif_filename)
+            nir_tif_path = self._workdir.joinpath(nir_tif_filename)
+
+            self._combine_tifs(
+                red_path=red_tif_path,
+                green_path=green_tif_path,
+                blue_path=nir_tif_path,
+                size=size
+            )
+
+        else:
+            raise ValueError(f"Thumbnail suitable data not found!")
+
+        return True

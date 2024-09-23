@@ -1,10 +1,12 @@
 import datetime
 import json
 import logging
-import os
 import random
 import time
 import requests
+
+from enum import Enum
+from urllib.parse import urljoin
 
 import config.stac_config as stac_config
 
@@ -19,6 +21,13 @@ password = 'your_password_should_go_here'
 """
 
 
+class Method(Enum):
+    GET = 1
+    POST = 2
+    PUT = 3
+    DELETE = 4
+
+
 class STACConnector:
     def __init__(
             self,
@@ -31,13 +40,14 @@ class STACConnector:
         self._stac_base_url = stac_base_url
         self._login(username=username, password=password)
 
-    def _send_request(self, endpoint, payload_dict=None, max_retries=5):
+    def _send_request(self, endpoint, headers=None, payload_dict=None, max_retries=5, method=Method.GET):
+        if headers is None:
+            headers = {}
+
         if payload_dict is None:
             payload_dict = {}
 
-        endpoint_full_url = os.path.join(self._stac_base_url, endpoint)
-
-        headers = {}
+        endpoint_full_url = urljoin(self._stac_base_url, endpoint)
 
         if endpoint != 'auth':
             if self._api_token_valid_until < datetime.datetime.utcnow():
@@ -47,7 +57,7 @@ class STACConnector:
 
         data = self._retry_request(
             endpoint=endpoint_full_url, payload_dict=payload_dict,
-            max_retries=max_retries, headers=headers
+            max_retries=max_retries, headers=headers, method=method
         )
 
         if data.status_code != 200:
@@ -55,7 +65,7 @@ class STACConnector:
 
         return data.content
 
-    def _retry_request(self, endpoint, payload_dict, max_retries, headers=None, timeout=10, sleep=5):
+    def _retry_request(self, endpoint, payload_dict, max_retries, headers=None, timeout=10, sleep=5, method=Method.GET):
         if headers is None:
             headers = {}
 
@@ -67,7 +77,17 @@ class STACConnector:
                     response = requests.get(endpoint, auth=(payload_dict['username'], payload_dict['password']))
                 else:
                     payload_json = json.dumps(payload_dict)
-                    response = requests.post(endpoint, payload_json, headers=headers, timeout=timeout)
+                    match method:
+                        case Method.GET:
+                            response = requests.get(endpoint, payload_json, headers=headers, timeout=timeout)
+                        case Method.POST:
+                            response = requests.post(endpoint, payload_json, headers=headers, timeout=timeout)
+                        case Method.PUT:
+                            response = requests.put(endpoint, payload_json, headers=headers, timeout=timeout)
+                        case Method.DELETE:
+                            response = requests.delete(endpoint, headers=headers, timeout=timeout)
+                        case _:
+                            raise STACRequestMethodNotProvided()
 
                 return response
 
@@ -90,12 +110,12 @@ class STACConnector:
         self._stac_token = None
         self._api_token_valid_until = datetime.datetime.utcnow() + datetime.timedelta(days=1)
 
-        stac_payload = {
+        auth_payload = {
             "username": self._username,
             "password": self._password
         }
 
-        response = self._send_request('auth', stac_payload)
+        response = self._send_request(endpoint='auth', payload_dict=auth_payload)
         response_content = json.loads(response)
 
         self._stac_token = response_content['token']
@@ -137,7 +157,11 @@ class STACConnector:
 
         if 'ErrorCode' in feature_id.keys():
             if feature_id['ErrorCode'] == 409:
-                feature_id = self.update_stac_item(json_dict, collection, feature_id['ErrorMessage'].split(' ')[1])
+                feature_id = self.update_stac_item(
+                    json_dict,
+                    collection,
+                    feature_id['ErrorMessage'].split(' ')[1]
+                )
             else:
                 raise Exception(f"Error {feature_id['ErrorCode']} for featureId {feature_id}.")
 
@@ -162,6 +186,20 @@ class STACConnector:
 
         return feature_id
 
+    def get_stac_item(self, dataset, feature_id):
+        headers = {
+            'Accept': 'application/json',
+        }
+
+        response = self._send_request(
+            endpoint=f"/collections/{dataset}/items/{feature_id}",
+            headers=headers, method=Method.GET
+        )
+
+        feature_dict = json.loads(response)
+
+        return feature_dict
+
     def update_stac_item(self, json_dict, dataset, feature_id):
         headers = {
             'Content-Type': 'application/json',
@@ -169,15 +207,14 @@ class STACConnector:
             'Authorization': 'Bearer ' + self._stac_token
         }
 
-        feature = json_dict['features'][0]
-
-        # TODO check jestli vrátilo HTTP/200-OK
-        response = requests.put(
-            url=self._stac_base_url + '/collections' + '/' + dataset + '/items' + '/' + feature_id,
-            headers=headers,
-            data=json.dumps(feature)
+        response = self._send_request(
+            endpoint=f"/collections/{dataset}/items/{feature_id}",
+            payload_dict=json_dict, headers=headers, method=Method.PUT,
         )
 
-        response = json.loads(response.content)
+        response = json.loads(response)
+        if response['status'] != "success":
+            raise STACRequestNotOK(f"STAC Update Request not OK for feature {feature_id}!")
 
+        feature_id = response['message'].split(' ')[-1]
         return feature_id

@@ -4,6 +4,7 @@ import datetime
 import threading
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from m2m_api_connector import M2MAPIConnector
 from stac_connector import STACConnector
@@ -30,7 +31,6 @@ class LandsatDownloader:
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
             s3_endpoint=None, s3_access_key=None, s3_secret_key=None, s3_host_bucket=None,
-            root_directory: Path = None, working_directory: Path = Path(landsat_config.working_directory),
             logger=logging.getLogger('LandsatDownloader'),
             feature_download_host=landsat_config.s3_download_host
     ):
@@ -45,24 +45,14 @@ class LandsatDownloader:
         :param s3_access_key: Access key for S3 bucket
         :param s3_secret_key: Secret key for S3 bucket
         :param s3_host_bucket: S3 host bucket (by default it should be "landsat")
-        :param root_directory: Absolute path to the root directory of the script
-        :param working_directory: Absolute path to the working directory (temporary dir for downloaded data etc.)
         :param logger:
         :param feature_download_host: URL of a host on which the http_server script is running
         """
         logger.debug("=== DOWNLOADER INITIALIZING ===")
 
-        if root_directory is None:
-            raise Exception("root_directory must be specified")
-
-        if working_directory is None:
-            raise Exception("working_directory must be specified")
-
         if feature_download_host is None:
             raise Exception("feature_download_host must be specified")
 
-        self._root_directory = Path(root_directory)
-        self._workdir = self._root_directory.joinpath(working_directory)
         self._logger = logger
         self._feature_download_host = feature_download_host
 
@@ -110,33 +100,24 @@ class LandsatDownloader:
         pycache_dir.unlink(missing_ok=True)
         """
 
-        import shutil
-        self._logger.debug(f"Initial cleanup: Deleting {self._workdir}")
-        # self._workdir.unlink(missing_ok=True) # Does not work, returns WinError 5: Access Denied
-        shutil.rmtree(self._workdir, ignore_errors=True)
-
-        self._logger.debug(f"Initial cleanup: Creating directory {self._workdir}")
-        self._workdir.mkdir(parents=True, exist_ok=True)
-
     def _get_last_downloaded_day(self):
         """
         Method reads date of last downloaded day from S3 storage
         :return: datetime of last downloaded day
         """
 
-        download_to = Path(self._workdir).joinpath(self._last_downloaded_day_filename)
+        with TemporaryDirectory() as temporary_directory:
+            download_to = Path(temporary_directory).joinpath(self._last_downloaded_day_filename)
 
-        self._s3_connector.download_file(
-            download_to, self._last_downloaded_day_filename
-        )
+            self._s3_connector.download_file(
+                download_to, self._last_downloaded_day_filename
+            )
 
-        with open(download_to) as last_downloaded_day_file:
-            last_downloaded_day = datetime.datetime.strptime(
-                json.load(last_downloaded_day_file)['last_downloaded_day'],
-                "%Y-%m-%d"
-            ).date()
-
-        download_to.unlink(missing_ok=False)
+            with open(download_to) as last_downloaded_day_file:
+                last_downloaded_day = datetime.datetime.strptime(
+                    json.load(last_downloaded_day_file)['last_downloaded_day'],
+                    "%Y-%m-%d"
+                ).date()
 
         return last_downloaded_day
 
@@ -152,15 +133,15 @@ class LandsatDownloader:
             return
 
         last_downloaded_day_dict = {"last_downloaded_day": day.strftime("%Y-%m-%d")}
-        local_file = Path(self._workdir).joinpath(self._last_downloaded_day_filename)
-        local_file.touch(exist_ok=True)
 
-        with open(local_file, "w") as last_downloaded_day_file:
-            json.dump(last_downloaded_day_dict, last_downloaded_day_file)
+        with TemporaryDirectory() as temporary_directory:
+            local_file = Path(temporary_directory).joinpath(self._last_downloaded_day_filename)
+            local_file.touch(exist_ok=True)
 
-        self._s3_connector.upload_file(str(local_file), self._last_downloaded_day_filename)
+            with open(local_file, "w") as last_downloaded_day_file:
+                json.dump(last_downloaded_day_dict, last_downloaded_day_file)
 
-        local_file.unlink(missing_ok=False)
+            self._s3_connector.upload_file(str(local_file), self._last_downloaded_day_filename)
 
     def _create_array_of_downloadable_days(self, date_from, date_to):
         """
@@ -240,7 +221,6 @@ class LandsatDownloader:
                         dataset=dataset, geojson=geojsons[geojson_key], time_start=day, time_end=day, label=scene_label
                     )
 
-                    thread_lock = threading.Lock()
                     downloaded_files = []
                     for downloadable_file_attributes in downloadable_files_attributes:
                         downloaded_files.append(
@@ -248,9 +228,7 @@ class LandsatDownloader:
                                 attributes=downloadable_file_attributes,
                                 stac_connector=self._stac_connector,
                                 s3_connector=self._s3_connector,
-                                workdir=self._workdir,
-                                logger=self._logger,
-                                thread_lock=thread_lock
+                                logger=self._logger
                             )
                         )
 
