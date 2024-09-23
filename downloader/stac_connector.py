@@ -92,9 +92,9 @@ class STACConnector:
                 return response
 
             except requests.exceptions.Timeout:
-                self._logger.warning(f'Connection timeout. Retry number {retry} of {max_retries}.')
-
                 retry += 1
+                self._logger.warning(f"Connection timeout. Retry number {retry} of {max_retries}.")
+
                 sleep = (1 + random.random()) * sleep
                 time.sleep(sleep)
 
