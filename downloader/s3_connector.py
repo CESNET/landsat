@@ -1,11 +1,9 @@
 import boto3
-import io
 import logging
 
 import botocore.exceptions
 
 import config.s3_config as s3_config
-from downloader.exceptions.s3_connector import S3KeyNotSpecified, S3KeyDoesNotExist
 
 """
 Create file ./config/s3_config.py with following content:
