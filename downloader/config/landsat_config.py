@@ -15,7 +15,7 @@ log_name = "landsat.log"
 log_level = 20
 log_logger = "LandsatLogger"
 
-m2m_scene_label = "landsat_downloader_testing"
+m2m_scene_label = "landsat_downloader_stable"
 
 # When changing port it must be reflected in http_server/docker-compose.yml!
 s3_download_host = "http://chronos.dhr.cesnet.cz:8081/"
@@ -40,5 +40,7 @@ catalogue_only = False
 force_redownload_file variable specifies whether we want to download file everytime 
 True: if the file has already been downloaded, we will overwrite it anyway
 False: the new file will be downloaded only if new file differs for example in size
+
+If this flag is set to True, it will override the catalogue_only flag - the file will be always downloaded!
 """
 force_redownload_file = False
