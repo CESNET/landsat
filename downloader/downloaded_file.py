@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import os
 import tarfile
+import threading
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -40,6 +41,8 @@ class DownloadedFile:
     _stac_connector: STACConnector
     _s3_connector: S3Connector
 
+    _thumbnail_generation_lock: threading.Lock
+
     _workdir_temp: TemporaryDirectory
     _workdir: Path | None = None
 
@@ -63,6 +66,7 @@ class DownloadedFile:
             self,
             attributes=None,
             stac_connector=None, s3_connector=None,
+            thumbnail_generation_lock=None,
             s3_download_host=landsat_config.s3_download_host,
             logger=logging.getLogger("DownloadedFile"),
             catalogue_only=landsat_config.catalogue_only,
@@ -92,6 +96,9 @@ class DownloadedFile:
         if stac_connector is None:
             raise DownloadedFileSTACConnectorNotSpecified(display_id=attributes['displayId'])
 
+        if thumbnail_generation_lock is None:
+            raise DownloadedFileThreadLockNotSet(display_id=attributes['displayId'])
+
         self._entity_id = attributes['entityId']
         self._product_id = attributes['productId']
         self._display_id = attributes['displayId']
@@ -104,8 +111,10 @@ class DownloadedFile:
         self._catalogue_only = catalogue_only
         self._force_redownload_file = force_redownload_file
 
-        self._stac_connector = stac_connector
         self._s3_connector = s3_connector
+        self._stac_connector = stac_connector
+
+        self._thumbnail_generation_lock = thumbnail_generation_lock
 
         self._download_host = urlparse(s3_download_host)
 
@@ -589,12 +598,13 @@ class DownloadedFile:
             self._untar(untarred_filename=red_tif_filename)
             red_tif_path = self._workdir.joinpath(red_tif_filename)
 
-            self._combine_tifs(
-                red_path=red_tif_path,
-                green_path=green_tif_path,
-                blue_path=blue_tif_path,
-                size=size
-            )
+            with self._thumbnail_generation_lock:
+                self._combine_tifs(
+                    red_path=red_tif_path,
+                    green_path=green_tif_path,
+                    blue_path=blue_tif_path,
+                    size=size
+                )
 
         elif green_tif_filename and red_tif_filename and nir_tif_filename:
             self._untar(untarred_filename=green_tif_filename)
@@ -604,12 +614,13 @@ class DownloadedFile:
             self._untar(untarred_filename=nir_tif_filename)
             nir_tif_path = self._workdir.joinpath(nir_tif_filename)
 
-            self._combine_tifs(
-                red_path=red_tif_path,
-                green_path=green_tif_path,
-                blue_path=nir_tif_path,
-                size=size
-            )
+            with self._thumbnail_generation_lock:
+                self._combine_tifs(
+                    red_path=red_tif_path,
+                    green_path=green_tif_path,
+                    blue_path=nir_tif_path,
+                    size=size
+                )
 
         else:
             raise ValueError(f"Thumbnail suitable data not found!")

@@ -208,6 +208,8 @@ class LandsatDownloader:
             with open(geojson_file_path, 'r') as geojson_file:
                 geojsons.update({geojson_file_path: json.loads(geojson_file.read())})
 
+        thumbnail_generation_lock = threading.Lock()
+
         for day in days_to_download:  # For each demanded day...
             for dataset in self._demanded_datasets:  # ...each demanded dataset...
                 for geojson_key in geojsons.keys():  # ...and each demanded geojson...
@@ -228,6 +230,7 @@ class LandsatDownloader:
                                 attributes=downloadable_file_attributes,
                                 stac_connector=self._stac_connector,
                                 s3_connector=self._s3_connector,
+                                thumbnail_generation_lock=thumbnail_generation_lock,
                                 logger=self._logger
                             )
                         )
