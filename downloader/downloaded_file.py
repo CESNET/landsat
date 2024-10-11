@@ -631,7 +631,7 @@ class DownloadedFile:
             if pregenerated_thumbnail_filename is None:
                 raise ValueError(f"Thumbnail suitable data not found!")
 
-            self._untar(untarred_filename=green_tif_filename)
+            self._untar(untarred_filename=pregenerated_thumbnail_filename)
 
             from utils.thumbnail_generation import rename
             pregenerated_thumbnail_path = self._workdir.joinpath(pregenerated_thumbnail_filename)
