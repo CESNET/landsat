@@ -631,6 +631,8 @@ class DownloadedFile:
             if pregenerated_thumbnail_filename is None:
                 raise ValueError(f"Thumbnail suitable data not found!")
 
+            self._logger.info(f"Using USGS pre-generated thumbnail.")
+
             self._untar(untarred_filename=pregenerated_thumbnail_filename)
 
             from utils.thumbnail_generation import rename
