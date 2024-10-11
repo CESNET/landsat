@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 
 from skimage import exposure
 
@@ -24,4 +25,23 @@ def replace_tif_to_jpg(filename):
         .replace('.TIF', '.jpg')
         .replace('.tiff', '.jpg')
         .replace('.TIFF', '.jpg')
+        .replace('.jpeg', '.jpg')
     )
+
+
+def rename(old_file_path: Path, new_file_path: Path):
+    if old_file_path.suffix != new_file_path.suffix:
+        if not (
+                (old_file_path.suffix.lower() in {'.jpg', '.jpeg'})
+                and
+                (new_file_path.suffix.lower() in {'.jpg', '.jpeg'})
+        ):
+            from exceptions.thumbnail_generation import RenameFileExtensionsDoNotMatch
+            raise RenameFileExtensionsDoNotMatch(old_file_path.name, new_file_path.name)
+
+    if new_file_path.exists():
+        from exceptions.thumbnail_generation import RenameFileExistsError
+        raise RenameFileExistsError(new_file_path)
+
+    old_file_path.rename(new_file_path)
+    return old_file_path

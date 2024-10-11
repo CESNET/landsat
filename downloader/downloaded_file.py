@@ -235,7 +235,7 @@ class DownloadedFile:
             return False
 
         if self._catalogue_only:
-            expected_length=None
+            expected_length = None
 
         return (
             self._s3_connector.check_if_key_exists(
@@ -508,7 +508,7 @@ class DownloadedFile:
         self._thumbnail_file_path = Path(replace_tif_to_jpg(str(self._thumbnail_file_path)))
         image.save(self._thumbnail_file_path, 'JPEG', quality=90)
 
-    def _generate_thumbnail(self, size=(1000, 1000)):
+    def _generate_thumbnail(self, size=(1024, 1024)):
         """
         Method generates thumbnail image
         :return: True if thumbnail was generated, False if it was not (f.x. thumbnail has been generated already)
@@ -623,6 +623,18 @@ class DownloadedFile:
                 )
 
         else:
-            raise ValueError(f"Thumbnail suitable data not found!")
+            pregenerated_thumbnail_filename = next(
+                (filename for filename in tar_file_list if '_thumb_large.jpeg' in filename.upper()),
+                None
+            )
+
+            if pregenerated_thumbnail_filename is None:
+                raise ValueError(f"Thumbnail suitable data not found!")
+
+            self._untar(untarred_filename=green_tif_filename)
+
+            from utils.thumbnail_generation import rename
+            pregenerated_thumbnail_path = self._workdir.joinpath(pregenerated_thumbnail_filename)
+            self._thumbnail_file_path = rename(pregenerated_thumbnail_path, self._thumbnail_file_path)
 
         return True
