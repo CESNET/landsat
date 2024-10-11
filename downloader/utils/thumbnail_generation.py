@@ -44,4 +44,4 @@ def rename(old_file_path: Path, new_file_path: Path):
         raise RenameFileExistsError(new_file_path)
 
     old_file_path.rename(new_file_path)
-    return old_file_path
+    return new_file_path
