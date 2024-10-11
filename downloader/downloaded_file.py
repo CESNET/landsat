@@ -624,7 +624,7 @@ class DownloadedFile:
 
         else:
             pregenerated_thumbnail_filename = next(
-                (filename for filename in tar_file_list if '_thumb_large.jpeg' in filename.upper()),
+                (filename for filename in tar_file_list if '_thumb_large.jpeg' in filename.lower()),
                 None
             )
 
