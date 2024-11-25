@@ -17,7 +17,8 @@ log_logger = "LandsatLogger"
 
 m2m_scene_label = "landsat_downloader_stable"
 
-# When changing port it must be reflected in http_server/docker-compose.yml!
+# When changing port it must be reflected in http_server/docker-compose.yml! # TODO not anymore - changed to apache2 proxy
+# Ending slash is mandatory!
 s3_download_host = "https://chronos.dhr.cesnet.cz/landsat/"
 
 demanded_datasets = [
