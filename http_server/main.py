@@ -1,15 +1,20 @@
 # aws must be set: https://du.cesnet.cz/cs/navody/object_storage/awscli/start
 
-import sys
-import re
-import os
 import logging
+import os
+import re
+import sys
+
 from logging.handlers import TimedRotatingFileHandler
+
 from pathlib import Path
 
-from sanic import Sanic, response
+from flask import Flask
+from flask import redirect as flask_redirect
 
-host_name = "0.0.0.0"  # Listen everywhere
+from waitress import serve
+
+server_host = "0.0.0.0"  # Listen everywhere
 server_port = 8080
 
 log_logger = "HttpServerLogger"
@@ -60,14 +65,23 @@ def setup_logging(current_path):
 
 
 logger = setup_logging(str(Path(__file__).parent.resolve()))
+flask_app = Flask(__name__)
 
-app = Sanic("landsat_http_server")
+
+def bad_request(path="NOT_SPECIFIED"):
+    logger.info(f"Got path: {path}, returning Bad Request (HTTP/400)!")
+    return "Bad Request", 400
 
 
-@app.route("/<path:path>")
-async def redirect(request, path):
+@flask_app.route("/")
+def slash():
+    return bad_request(path="/")
+
+
+@flask_app.route('/<path:path>')
+def redirect(path):
     if not ("landsat" in path):
-        return response.empty()
+        return bad_request(path=path)
 
     s3_url = f"s3://landsat/{path}"  # Prepares path to S3 bucket using requested URL
 
@@ -76,8 +90,8 @@ async def redirect(request, path):
 
     logger.info(f"Got path: {path}, redirecting to: " + s3_download_url)
 
-    return response.redirect(s3_download_url)
+    return flask_redirect(s3_download_url, code=302)
 
 
-if __name__ == "__main__":
-    app.run(host=host_name, port=server_port)
+if __name__ == '__main__':
+    serve(flask_app, host=server_host, port=server_port)
