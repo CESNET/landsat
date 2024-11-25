@@ -409,6 +409,9 @@ class DownloadedFile:
 
         self._stac_item_clear(stac_item_dict)
 
+        # TODO something like this vvv, but run in debugging just to be sure!
+        # stac_item_dict['displayId'] = self._display_id
+
         self._feature_dict = stac_item_dict
 
     def _append_assets_to_feature(self):
@@ -419,7 +422,7 @@ class DownloadedFile:
                         (
                             self._download_host.scheme,
                             self._download_host.netloc,
-                            f"{self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)}",
+                            f"{self._download_host.path}{self._get_s3_bucket_key_of_file(self._metadata_xml_file_path)}",
                             "", ""
                         )
                     ),
@@ -432,7 +435,7 @@ class DownloadedFile:
                         (
                             self._download_host.scheme,
                             self._download_host.netloc,
-                            f"{self._get_s3_bucket_key_of_file(self._data_file_path)}",
+                            f"{self._download_host.path}{self._get_s3_bucket_key_of_file(self._data_file_path)}",
                             "", ""
                         )
                     ),
@@ -445,7 +448,7 @@ class DownloadedFile:
                         (
                             self._download_host.scheme,
                             self._download_host.netloc,
-                            f"{self._get_s3_bucket_key_of_file(self._thumbnail_file_path)}",
+                            f"{self._download_host.path}{self._get_s3_bucket_key_of_file(self._thumbnail_file_path)}",
                             "", ""
                         )
                     ),
