@@ -370,7 +370,7 @@ class M2MAPIConnector:
 
         return data.content
 
-    def _retry_request(self, endpoint, payload, max_retries=5, headers=None, timeout=10, sleep=5):
+    def _retry_request(self, endpoint, payload, max_retries=5, headers=None, timeout=30, sleep=5):
         """
         Method sends request to specified endpoint until number of max_retries is reached
         For max_retries=5 the request is sent 6 times, since first (or the "zeroth") is understood as proper request.
