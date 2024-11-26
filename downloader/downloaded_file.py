@@ -409,8 +409,7 @@ class DownloadedFile:
 
         self._stac_item_clear(stac_item_dict)
 
-        # TODO something like this vvv, but run in debugging just to be sure!
-        # stac_item_dict['displayId'] = self._display_id
+        stac_item_dict['properties']['displayId'] = self._display_id
 
         self._feature_dict = stac_item_dict
 
