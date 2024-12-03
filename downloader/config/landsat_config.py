@@ -15,7 +15,7 @@ log_name = "landsat.log"
 log_level = 20
 log_logger = "LandsatLogger"
 
-m2m_scene_label = "landsat_downloader_stable"
+m2m_scene_label = "landsat_downloader_add_displayId"
 
 # When changing port it must be reflected in http_server/docker-compose.yml! # TODO not anymore - changed to apache2 proxy
 # Ending slash is mandatory!
@@ -35,7 +35,7 @@ True: script will download only files that has not been downloaded from USGS M2M
 False: script will check every file (even downloaded ones) against USGS M2M API, 
     and will redownload all of them for example if size has changed
 """
-catalogue_only = False
+catalogue_only = True
 
 """
 force_redownload_file variable specifies whether we want to download file everytime 

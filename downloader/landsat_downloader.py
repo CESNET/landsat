@@ -23,7 +23,7 @@ class LandsatDownloader:
     Filename of a .json file which contains information of last day that was downloaded.
     By default located in s3 bucket landsat/last_downloaded_day.json
     """
-    _last_downloaded_day_filename = 'last_downloaded_day.json'
+    _last_downloaded_day_filename = 'last_downloaded_day_add_displayId_to_STAC_CAN_BE_REMOVED_AFTER_RUNNING.json'
 
     def __init__(
             self,
