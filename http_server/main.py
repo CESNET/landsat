@@ -1,25 +1,20 @@
 # aws must be set: https://du.cesnet.cz/cs/navody/object_storage/awscli/start
 
-import logging
-import os
-import re
 import sys
-
+import re
+import os
+import logging
 from logging.handlers import TimedRotatingFileHandler
-
 from pathlib import Path
 
-from flask import Flask
-from flask import redirect as flask_redirect
-
-from waitress import serve
+from sanic import Sanic, response
 
 server_host = "0.0.0.0"  # Listen everywhere
 server_port = 8080
 
 log_logger = "HttpServerLogger"
 log_directory = './log'
-log_name = 'http-server.log'
+log_name = 'http_server.log'
 log_level = 20
 """
 LOG LEVELS:
@@ -66,33 +61,23 @@ def setup_logging(current_path):
 
 logger = setup_logging(str(Path(__file__).parent.resolve()))
 
-flask_app = Flask(__name__)
+app = Sanic("landsat_http_server")
 
 
-def bad_request(path="NOT_SPECIFIED"):
-    logger.info(f"Got path: {path}, returning Bad Request (HTTP/400)!")
-    return "Bad Request", 400
-
-
-@flask_app.route("/")
-def slash():
-    return bad_request(path="/")
-
-
-@flask_app.route('/<path:path>')
-def redirect(path):
+@app.route("/<path:path>")
+async def redirect(request, path):
     if not ("landsat" in path):
-        return bad_request(path=path)
+        return response.empty()
 
-    s3_url = f"s3://landsat/{path}"  # Prepares path to S3 bucket using requested URL
+    s3_url = f"s3://landsat{path}"  # Prepares path to S3 bucket using requested URL
 
     aws_command = f"aws s3 --endpoint-url https://s3.cl4.du.cesnet.cz presign {s3_url}"
     s3_download_url = os.popen(aws_command).read().strip()  # Generate temporary link to download file from S3 bucket
 
     logger.info(f"Got path: {path}, redirecting to: " + s3_download_url)
 
-    return flask_redirect(s3_download_url, code=302)
+    return response.redirect(s3_download_url)
 
 
-if __name__ == '__main__':
-    serve(flask_app, host=server_host, port=server_port)
+if __name__ == "__main__":
+    app.run(host=server_host, port=server_port)
