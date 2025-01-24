@@ -65,6 +65,7 @@ def setup_logging(current_path):
 
 
 logger = setup_logging(str(Path(__file__).parent.resolve()))
+
 flask_app = Flask(__name__)
 
 
