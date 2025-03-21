@@ -86,8 +86,8 @@ if __name__ == '__main__':
         while True:  # The downloading itself, repeat indefinitely
             next_run_at = datetime.datetime.combine(
                 datetime.datetime.now(datetime.UTC).date() + datetime.timedelta(days=1),
-                datetime.time(hour=21, minute=00)
-            )  # Next run tomorrow at 23:00 UTC
+                datetime.time(hour=8, minute=00)
+            )  # Next run tomorrow at 08:00 UTC
 
             try:
                 landsat_downloader.run()
