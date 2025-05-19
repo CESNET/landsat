@@ -72,59 +72,58 @@ Log is rotated every day at 12:00 AM UTC.
 
 Powered by [Sanic](https://sanic.dev/en/).
 
-HTTP server acts as a relay between asset link published in STAC catalog and S3 storage.
-Using [awscli](https://du.cesnet.cz/cs/navody/object_storage/cesnet_s3_url_share) the script
-generates a temporary link to download selected asset.
+HTTP server acts as a relay between an asset link published in STAC catalog and S3 storage.
 
 ### Prerequisites
 
 The **http-server/.env** file must be filled as follows:
 
 ```bash
-AWS_CONFIG_FILE=~/.aws/config
-AWS_SHARED_CREDENTIALS_FILE=~/.aws/credentials
-AWS_ACCESS_KEY_ID=ASDFGHJKLQWERTYUIOP1
-AWS_SECRET_ACCESS_KEY=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd
-AWS_DEFAULT_REGION= 
-AWS_DEFAULT_OUTPUT=text
+SANIC__APP_NAME="landsat_http_server"
+SANIC__SERVER_HOST="0.0.0.0"
+SANIC__SERVER_PORT="8080"
+
+S3_CONNECTOR__HOST_BASE="https://s3.example.com"
+S3_CONNECTOR__HOST_BUCKET="landsat"
+S3_CONNECTOR__ACCESS_KEY="1234567890ABCDEFGHIJ"
+S3_CONNECTOR__SECRET_KEY="123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcde"
 ```
-
-#### WARNING
-
-`AWS_DEFAULT_REGION= ` got space after **=**, and it must be there as
-said [here](https://du.cesnet.cz/cs/navody/object_storage/awscli/start).
 
 ### Settings
 
-There is not much what can be changed here. See beginning of **http-server/main.py**.
-
-Lines:
-
-```python
-host_name = "0.0.0.0"
-server_port = 8080
-```
-
-could be altered, but I recommend to change settings of the [Docker](#Running) and firewall.
+There is not much what can be changed here. The main changes can be done by altering **.env** file.
 
 ### Logging
 
-Logging can be altered using **http-server/main.py** lines:
+Logging can be altered using **.env** file as well. For example:
 
-```python
-log_logger = "HttpServerLogger"
-log_directory = './log'
-log_name = 'http-server.log'
-log_level = 20
+```bash
+LOGGER__NAME="LandsatHttpServerLogger"
+LOGGER__LOG_DIRECTORY="./"
+LOGGER__LOG_FILENAME="landsat_http_server.log"
+LOGGER__LOG_LEVEL=20
 ```
 
-`log_directory` can be either relative to **http-server/** or absolute.
+`LOGGER__LOG_DIRECTORY` can be either relative to **http-server/** or absolute.
 
 Log is rotated every day at 12:00 AM UTC.
 
+Log levels are as follows:
+
+| READABLE | INTEGER  |
+|----------|----------|
+| CRITICAL | 50       |
+| FATAL    | CRITICAL |
+| ERROR    | 40       |
+| WARNING  | 30       |
+| WARN     | WARNING  |
+| INFO     | 20       |
+| DEBUG    | 10       |
+| NOTSET   | 0        |
+
 ## Running
 
-Package is using Docker. Please see the corresponding **docker-compose.yml** files for [downloader](#downloader) 
+Package is using Docker. Please see the corresponding **docker-compose.yml** files for [downloader](#downloader)
 and [http-server](#http-server).
 
 There is not much to change. In fact just the port of **http-server** in :
@@ -138,6 +137,7 @@ http-server:
 To run the package just install `docker` and run `docker compose up -d` command in both directories.
 
 So to run the **downloader** in folder `landsat/downloader` execute:
+
 ```bash
 docker compose up -d
 ```
@@ -146,7 +146,7 @@ and do the same in folder `landsat/http-server` to execute **http-server**.
 
 There is also prepared a little script to run both of these docker containers.
 
-Also in both **docker-compose.yml** files there are flags `restart: unless-stopped`, and thus after rebooting the 
+Also in both **docker-compose.yml** files there are flags `restart: unless-stopped`, and thus after rebooting the
 machine, scripts will restart automatically.
 
 ## Thanks
