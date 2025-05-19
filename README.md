@@ -99,7 +99,7 @@ Logging can be altered using **.env** file as well. For example:
 
 ```bash
 LOGGER__NAME="LandsatHttpServerLogger"
-LOGGER__LOG_DIRECTORY="./"
+LOGGER__LOG_DIRECTORY="./log"
 LOGGER__LOG_FILENAME="landsat_http_server.log"
 LOGGER__LOG_LEVEL=20
 ```
