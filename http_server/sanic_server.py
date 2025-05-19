@@ -46,6 +46,8 @@ class SanicServer():
             if "landsat" not in path:
                 return response.empty()
 
+            path = path.replace("//", "/")
+
             s3_key = path.replace(f"{S3_CONNECTOR__HOST_BUCKET}/", "")
             tar_member_file = request.args.get("tarMemberFile")
             offset = int(request.args.get("offset") or 0)
