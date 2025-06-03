@@ -17,6 +17,7 @@ from PIL import Image
 
 from stactools.landsat import stac as stac_landsat
 
+import env
 from stac_connector import STACConnector
 from s3_connector import S3Connector
 
@@ -56,7 +57,7 @@ class DownloadedFile:
     _feature_dict = None
     _feature_id = None
 
-    # False if we want to for exapmle check size of already downloaded files against M2M API
+    # False if we want to for example check size of already downloaded files against M2M API
     _catalogue_only = False
 
     # True if we want to redownload file eventhough it is already downloaded
@@ -69,8 +70,8 @@ class DownloadedFile:
             thumbnail_generation_lock=None,
             s3_download_host=landsat_config.s3_download_host,
             logger=logging.getLogger("DownloadedFile"),
-            catalogue_only=landsat_config.catalogue_only,
-            force_redownload_file=landsat_config.force_redownload_file
+            catalogue_only=env.LANDSAT__CATALOGUE_ONLY,
+            force_redownload_file=env.LANDSAT__FORCE_REDOWNLOAD_FILE
     ):
         """
         Constructor

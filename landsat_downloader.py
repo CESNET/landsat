@@ -13,6 +13,8 @@ from downloaded_file import DownloadedFile
 
 from config import landsat_config
 
+import env
+
 
 class LandsatDownloader:
     """
@@ -27,7 +29,7 @@ class LandsatDownloader:
 
     def __init__(
             self,
-            demanded_datasets=landsat_config.demanded_datasets,
+            demanded_datasets=env.LANDSAT__DEMANDED_DATASETS,
             m2m_username=None, m2m_token=None,
             stac_username=None, stac_password=None,
             s3_endpoint=None, s3_access_key=None, s3_secret_key=None, s3_host_bucket=None,
